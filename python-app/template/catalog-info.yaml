@@ -2,9 +2,10 @@ apiVersion: backstage.io/v1alpha1
 kind: Component
 metadata:
   name: ${{values.app_name}}
-  description: An example of a python application.
+  description: An example of a ${{values.app_name}} application.
   annotations:
-    github.com/project-slug: tyrelof/python-app
+    github.com/project-slug: tyrelof/${{values.app_name}}
+    backstage.io/techdocs-ref: dir:.
 spec:
   type: service
   owner: development
