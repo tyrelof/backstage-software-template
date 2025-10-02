@@ -36,11 +36,11 @@ spec:
       name: Publish
       action: publish:gitlab
       input:
-        description: This is ${{ parameters.component_id }}
-        # Format is host?repo=<name>&owner=<group or subgroup path>
         repoUrl: gitlab.com?owner=tyrelorde.fecha&repo=${{ parameters.component_id }}
         repoVisibility: public
         defaultBranch: main
+        settings:
+          description: This is ${{ parameters.component_id }}
 
     - id: register
       name: Register
