@@ -2,7 +2,7 @@ apiVersion: scaffolder.backstage.io/v1beta3
 kind: Template
 metadata:
   name: python-template-for-gitlab
-  title: Python flask template
+  title: Python flask template For GITLAB
   description: Provisions a minimalistic flask application
 spec:
   owner: development
