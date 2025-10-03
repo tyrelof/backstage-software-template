@@ -21,6 +21,15 @@ spec:
           title: Environment
           type: string
           enum: [dev, prod]
+        ownerPath:
+          title: GitLab owner (group/subgroup or username)
+          description: e.g. platform or platform/tools or group_17_bot
+          type: string
+          default: platform
+        gitlabHost:
+          title: GitLab Host
+          type: string
+          default: nexus.nmscreative.com
 
   steps:
     - id: fetch-base
@@ -36,7 +45,8 @@ spec:
       name: Publish
       action: publish:gitlab
       input:
-        repoUrl: nexus.nmscreative.com?owner=platform&repo=${{ parameters.component_id }}
+        # repoUrl: nexus.nmscreative.com?owner=group_17_bot&repo=${{ parameters.component_id }}
+        repoUrl: ${{ parameters.gitlabHost }}?owner=${{ parameters.ownerPath }}&repo=${{ parameters.component_id }}
         repoVisibility: public
         defaultBranch: main
 
