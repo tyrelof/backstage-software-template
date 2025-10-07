@@ -23,7 +23,7 @@ spec:
           enum: [dev, prod]
         ownerPath:
           title: GitLab owner (group/subgroup or username)
-          description: e.g. platform or platform/tools or group_17_bot
+          description: e.g. platform or platform/tools
           type: string
           default: creative-projects
         gitlabHost:
@@ -48,29 +48,6 @@ spec:
         repoUrl: ${{ parameters.gitlabHost }}?owner=${{ parameters.ownerPath | lower }}&repo=${{ parameters.component_id | lower }}
         repoVisibility: private
         defaultBranch: main
-
-    - id: create-push-token
-      name: Create project access token
-      action: gitlab:projectAccessToken:create
-      input:
-        projectId: ${{ steps['publish'].output.projectId }} 
-        repoUrl: ${{ parameters.gitlabHost }}?owner=${{ parameters.ownerPath | lower }}&repo=${{ parameters.component_id | lower }}
-        name: ci-push
-        accessLevel: 40                   # 40 = Maintainer; 30 = Developer
-        scopes: [write_repository]
-        # expiresAt: "2026-01-01"         # optional
-
-    - id: save-token
-      name: Store token as CI variable
-      action: gitlab:projectVariable:create
-      input:
-        projectId: ${{ steps['publish'].output.projectId }}
-        repoUrl: ${{ parameters.gitlabHost }}?owner=${{ parameters.ownerPath | lower }}&repo=${{ parameters.component_id | lower }}
-        key: PROJECT_PUSH_TOKEN
-        value: ${{ steps['create-push-token'].output.token }}
-        variableType: env_var
-        masked: true
-        variableProtected: true
 
     - id: register
       name: Register
