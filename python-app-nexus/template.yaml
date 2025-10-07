@@ -1,7 +1,7 @@
 apiVersion: scaffolder.backstage.io/v1beta3
 kind: Template
 metadata:
-  name: python-template
+  name: python-template-for-nexus
   title: Python flask template For NEXUS
   description: Provisions a minimalistic flask application
 spec:

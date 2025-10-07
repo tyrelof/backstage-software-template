@@ -1,7 +1,7 @@
 apiVersion: scaffolder.backstage.io/v1beta3
 kind: Template
 metadata:
-  name: python-template
+  name: python-template-for-github
   title: Python flask template
   description: Provisions a minimalistic flask application
 spec:
