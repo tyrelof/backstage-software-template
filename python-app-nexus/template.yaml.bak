@@ -49,6 +49,13 @@ spec:
         repoVisibility: private
         defaultBranch: main
 
+    - id: resolve-project
+      name: Resolve project id
+      action: http:backstage:request
+      input:
+        method: GET
+        path: /proxy/gitlab/api/v4/projects/${{ parameters.ownerPath | lower }}%2F${{ parameters.component_id | lower }}
+
     - id: create-push-token
       name: Create project access token
       action: gitlab:projectAccessToken:create
