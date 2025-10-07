@@ -12,7 +12,11 @@ variables:
 build:
   stage: build
   tags: ["self-hosted","kaniko"]
-  image: gcr.io/kaniko-project/executor:latest
+  image:
+    name: gcr.io/kaniko-project/executor:debug
+    entrypoint: [""]                 # important: let GitLab provide the shell
+  variables:
+    DOCKER_CONFIG: /kaniko/.docker   # where Kaniko reads auth from
   rules:
     - if: '$CI_COMMIT_BRANCH == "main"'
       changes:
@@ -20,9 +24,14 @@ build:
         - "Dockerfile"
         - "requirements.txt"
         - "charts/**/*"
+  before_script:
+    - mkdir -p "$DOCKER_CONFIG"
+    - echo "$DOCKER_AUTH_CONFIG" > "$DOCKER_CONFIG/config.json"
+    # - AUTH="$(printf '%s:%s' "$DOCKERHUB_USERNAME" "$DOCKERHUB_TOKEN" | base64 | tr -d '\n')"
+    # - printf '{"auths":{"https://index.docker.io/v1/":{"auth":"%s"}}}\n' "$AUTH" > "$DOCKER_CONFIG/config.json"
   script:
-    # Easiest auth: set a masked CI variable DOCKER_AUTH_CONFIG with JSON below:
-    # {"auths":{"https://index.docker.io/v1/":{"auth":"<base64(DOCKERHUB_USERNAME:DOCKERHUB_TOKEN)>"}}}
+    # Make sure DOCKER_AUTH_CONFIG is set as a masked var at Group/Project level.
+    # Example value: {"auths":{"https://index.docker.io/v1/":{"auth":"<base64(USER:TOKEN)>"}}}
     - /kaniko/executor
         --context "${CI_PROJECT_DIR}"
         --dockerfile "${CI_PROJECT_DIR}/Dockerfile"
@@ -38,26 +47,25 @@ build:
 tag-values:
   stage: tag
   tags: ["self-hosted"]
-  needs: ["build"]
-  image: python:3.12-alpine
+  image: alpine:3.20
   rules:
     - if: '$CI_COMMIT_BRANCH == "main"'
   before_script:
-    - apk add --no-cache git openssh-client
-    - pip install yq
-    - git config user.name  "Platform Bot"
+    - apk add --no-cache git yq
+    - git config --global safe.directory "$CI_PROJECT_DIR"
+    - git config user.name "Platform Bot"
     - git config user.email "platform-bot@noreply.local"
-    # Allow CI job to push to the repo (enable in project settings)
-    - git remote set-url origin "https://gitlab-ci-token:${CI_JOB_TOKEN}@${CI_SERVER_HOST}/${CI_PROJECT_PATH}.git"
+    - git remote set-url origin "https://oauth2:${PROJECT_PUSH_TOKEN}@${CI_SERVER_HOST}/${CI_PROJECT_PATH}.git"
     - git fetch --all
-    - git checkout "${CI_COMMIT_BRANCH}"
+    - git checkout "$CI_COMMIT_REF_NAME"
   script:
+    - COMMIT_ID="$CI_COMMIT_SHORT_SHA"
     - FILE="charts/${APP_NAME}/values-${APP_ENV}.yaml"
-    - yq -Yi ".image.repository = \"${IMAGE_REPO}\"" "${FILE}"
-    - yq -Yi ".image.tag = \"${COMMIT_ID}\"" "${FILE}"
-    - git add "${FILE}"
-    - git commit -m "chore: set image=${IMAGE_REPO}:${COMMIT_ID} for ${APP_ENV}"
-    - git push origin "${CI_COMMIT_BRANCH}"
+    - yq -i '.image.repository = strenv(IMAGE_REPO)' "$FILE"
+    - yq -i '.image.tag = strenv(COMMIT_ID)' "$FILE"
+    - git add "$FILE"
+    - 'git commit -m "chore: image=${IMAGE_REPO}:${COMMIT_ID} (${APP_ENV})" || true'
+    - git push origin "$CI_COMMIT_REF_NAME"
 
 deploy:
   stage: deploy
@@ -76,6 +84,15 @@ deploy:
 
     - REPO_URL="${CI_REPOSITORY_URL}"
     - argocd repo list | grep -q "$REPO_URL" || argocd repo add "$REPO_URL"
+
+    # If your repo is private, pass creds to ArgoCD on first add:
+    # - REPO_URL="${CI_REPOSITORY_URL}"
+    # - |
+    #   if ! argocd repo list | grep -q "$REPO_URL"; then
+    #     argocd repo add "$REPO_URL" \
+    #       --username oauth2 \
+    #       --password "$PROJECT_PUSH_TOKEN" || true
+    #   fi
 
     - CHART_PATH="charts/${APP_NAME}"
     - VALUES_FILE="values-${APP_ENV}.yaml"
