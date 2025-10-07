@@ -47,7 +47,7 @@ spec:
       input:
         # repoUrl: nexus.nmscreative.com?owner=creative-project&repo=${{ parameters.component_id }}
         repoUrl: ${{ parameters.gitlabHost }}?owner=${{ parameters.ownerPath }}&repo=${{ parameters.component_id }}
-        repoVisibility: public
+        repoVisibility: private
         defaultBranch: main
 
     - id: create-push-token
