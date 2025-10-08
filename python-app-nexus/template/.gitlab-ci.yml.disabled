@@ -1,117 +1,115 @@
-# .gitlab-ci.yml
-stages:
-  - build
-  - deploy
-
-# Global defaults for docker buildx (Docker-in-Docker)
-image: docker:24.0
-services:
-  - docker:24.0-dind
-
-variables:
-  DOCKER_DRIVER: overlay2
-  DOCKER_TLS_CERTDIR: "/certs"
-  # shorten commit to 6 chars
-  COMMIT_ID: "${CI_COMMIT_SHA:0:6}"
-
-# Build & push image to Docker Hub
-build:
-  stage: build
-  rules:
-    - changes:
-        - src/**/*  # only run when app code changes
-      when: on_success
-    - when: manual  # allow manual runs too
-  before_script:
-    - docker info
-  script:
-    # Login to Docker Hub
-    - echo "$DOCKERHUB_TOKEN" | docker login -u "$DOCKERHUB_USERNAME" --password-stdin
-
-    # Enable buildx (optional but recommended)
-    - docker buildx create --use
-    - docker buildx bake || true  # ignore if no bake file; buildx still initialized
-
-    # Build & push
-    - docker buildx build --push -t "tyrelfecha/${CI_PROJECT_NAME}:${COMMIT_ID}" .
-
-    # Expose COMMIT_ID to downstream job via dotenv artifact
-    - echo "COMMIT_ID=${COMMIT_ID}" >> build.env
-  artifacts:
-    reports:
-      dotenv: build.env
-    expire_in: 1 day
-
-# Deploy via ArgoCD (uses a self-hosted runner)
-deploy:
-  stage: deploy
-  needs: ["build"]
-  tags: ["self-hosted"]   # <-- make sure your runner has this tag
-  image: alpine:3.20
+workflow:
   rules:
     - if: '$CI_COMMIT_BRANCH == "main"'
+      changes:
+        - src/**/*
+        - Dockerfile
+        - charts/**/*
+    - when: never
+
+stages: [build, release]
+
+variables:
+  GIT_DEPTH: "1"
+  APP_NAME: "${{ values.app_name }}"
+  APP_ENV: "${{ values.app_env }}"
+  IMAGE_REPO: "tyrelfecha/${{ values.app_name }}"
+  COMMIT_ID: "${CI_COMMIT_SHORT_SHA}"
+
+ci:
+  stage: build
+  tags: ["self-hosted","kaniko"]
+  image:
+    name: gcr.io/kaniko-project/executor:debug
+    entrypoint: [""]
+  variables:
+    DOCKER_CONFIG: /kaniko/.docker
   before_script:
-    - apk add --no-cache git curl bash python3 py3-pip
-    # yq (Mike Farah) binary
-    - YQ_VERSION=v4.44.3
-    - wget -q "https://github.com/mikefarah/yq/releases/download/${YQ_VERSION}/yq_linux_amd64" -O /usr/local/bin/yq
-    - chmod +x /usr/local/bin/yq
-    # ArgoCD CLI
-    - curl -ksSL -o /usr/local/bin/argocd https://raw.githubusercontent.com/argoproj/argo-cd/stable/dist/argocd-linux-amd64
-    - chmod +x /usr/local/bin/argocd
-    # Git identity for committing the values bump
-    - git config --global user.email "${GIT_USER_EMAIL:-ci-bot@nms.local}"
-    - git config --global user.name  "${GIT_USER_NAME:-NMS CI Bot}"
-  script:
-    # Ensure we have the repo remote writable; prefer PAT over CI_JOB_TOKEN for protected branches
-    # If using PAT:
-    #   - Set REPO_PUSH_TOKEN with "api" & "write_repository" scopes (masked, protected).
-    #   - Set GIT_REMOTE to https://oauth2:${REPO_PUSH_TOKEN}@${CI_SERVER_HOST}/${CI_PROJECT_PATH}.git
-    # If using CI_JOB_TOKEN (requires Project Settings -> CI/CD -> 'Allow pipeline to push'):
-    #   - Set GIT_REMOTE to https://gitlab-ci-token:${CI_JOB_TOKEN}@${CI_SERVER_HOST}/${CI_PROJECT_PATH}.git
-    - export GIT_REMOTE="${GIT_REMOTE:-https://oauth2:${REPO_PUSH_TOKEN}@${CI_SERVER_HOST}/${CI_PROJECT_PATH}.git}"
+    - mkdir -p "$DOCKER_CONFIG"
+    - AUTH="$(printf '%s:%s' "$DOCKERHUB_USERNAME" "$DOCKERHUB_TOKEN" | base64 | tr -d '\n')"
+    - printf '{"auths":{"https://index.docker.io/v1/":{"auth":"%s"}}}\n' "$AUTH" > "$DOCKER_CONFIG/config.json"
+  script: |
+    /kaniko/executor \
+      --context "${CI_PROJECT_DIR}" \
+      --dockerfile "${CI_PROJECT_DIR}/Dockerfile" \
+      --destination "docker.io/${IMAGE_REPO}:${COMMIT_ID}" \
+      --destination "docker.io/${IMAGE_REPO}:latest" \
+      --cache=true \
+      --cache-repo "docker.io/${IMAGE_REPO}"
+    echo "COMMIT_ID=${COMMIT_ID}" >> build.env
+  artifacts:
+    reports: { dotenv: build.env }
+    expire_in: 1 day
 
-    # Make sure we’re on the branch we’re deploying
-    - git checkout "$CI_COMMIT_BRANCH"
-    - git pull --no-rebase origin "$CI_COMMIT_BRANCH"
+cd:
+  stage: release
+  tags: ["self-hosted"]
+  image: tyrelfecha/argocd-yq:2.11.7
+  before_script:
+    - git config --global safe.directory "$CI_PROJECT_DIR"
+    - git config user.name "Platform Bot"
+    - git config user.email "platform-bot@noreply.local"
+    - git remote set-url origin "https://oauth2:${PROJECT_PUSH_TOKEN}@${CI_SERVER_HOST}/${CI_PROJECT_PATH}.git"
+    - git fetch --all
+    - git checkout "$CI_COMMIT_REF_NAME"
+  script: |
+    # 1) bump values
+    FILE="charts/${APP_NAME}/values-${APP_ENV}.yaml"
+    yq -i '.image.repository = strenv(IMAGE_REPO)' "$FILE"
+    yq -i '.image.tag = strenv(COMMIT_ID)' "$FILE"
 
-    # Update Helm values file with the short image tag from build job
-    - echo "Using COMMIT_ID=${COMMIT_ID}"
-    - yq -i '.image.tag = strenv(COMMIT_ID)' "charts/${{values.app_name}}/values-${{values.app_env}}.yaml"
+    # 2) commit with CI skip + push with skip (prevents a new pipeline)
+    if ! git diff --quiet -- "$FILE"; then
+      git add "$FILE"
+      git commit -m "chore: image=${IMAGE_REPO}:${COMMIT_ID} (${APP_ENV}) [ci skip]"
+      git push -o ci.skip origin "$CI_COMMIT_REF_NAME"
+    else
+      echo "No changes"
+    fi
 
-    # Commit and push the change
-    - git add "charts/${{values.app_name}}/values-${{values.app_env}}.yaml"
-    - git commit -m "chore(ci): bump image tag to ${COMMIT_ID}"
-    - git push "$GIT_REMOTE" "HEAD:$CI_COMMIT_BRANCH"
+    # 3) ArgoCD login
+    argocd login argocd-server.argocd --insecure --grpc-web \
+      --username "${ARGOCD_USERNAME:-admin}" --password "$ARGOCD_PASSWORD"
 
-    # ArgoCD login
-    - argocd login argocd-server.argocd --insecure --grpc-web \
-        --username "${ARGOCD_USERNAME:-admin}" \
-        --password "${ARGOCD_PASSWORD}"
+    # 4) Always register a clean repo URL (no CI job token inside)
+    REPO_URL_CLEAN="https://${CI_SERVER_HOST}/${CI_PROJECT_PATH}.git"
 
-    # Ensure the Git repo is registered in ArgoCD
-    - REPO_URL="${CI_REPOSITORY_URL}"   # HTTPS repo URL provided by GitLab CI
-    - argocd repo list | grep -q "$REPO_URL" || argocd repo add "$REPO_URL"
+    # If a bad entry with gitlab-ci-token exists, remove it (one-time cleanup)
+    if argocd repo list --output name | grep -Fxq "${CI_REPOSITORY_URL}"; then
+      argocd repo rm "${CI_REPOSITORY_URL}" || true
+    fi
 
-    # Create the app if missing (names & paths templated by Backstage values)
-    - |
-      APP_NAME="${{values.app_name}}"
-      NAMESPACE="${{values.app_env}}"
-      CHART_PATH="charts/${{values.app_name}}"
-      VALUES_FILE="values-${{values.app_env}}.yaml"
+    # (Re)register the clean URL with persistent creds (group/project token)
+    # GitLab tokens over HTTPS use username 'oauth2'
+    argocd repo add "${REPO_URL_CLEAN}" \
+      --username oauth2 \
+      --password "${PROJECT_PUSH_TOKEN}" \
+      --upsert
 
-      if ! argocd app get "$APP_NAME" >/dev/null 2>&1; then
-        argocd app create "$APP_NAME" \
-          --repo "$REPO_URL" \
-          --path "$CHART_PATH" \
-          --dest-namespace "$NAMESPACE" \
-          --dest-server https://kubernetes.default.svc \
-          --values "$VALUES_FILE" \
-          --revision "$CI_COMMIT_BRANCH" \
-          --sync-policy manual \
-          --sync-option CreateNamespace=true
-      fi
+    CHART_PATH="charts/${APP_NAME}"
+    VALUES_FILE="values-${APP_ENV}.yaml"
 
-    # Sync & wait
-    - argocd app sync "${{values.app_name}}"
-    - argocd app wait "${{values.app_name}}" --timeout 180
+    # Ensure the app points to the CLEAN URL
+    if ! argocd app get "${APP_NAME}" >/dev/null 2>&1; then
+      argocd app create "${APP_NAME}" \
+        --repo "${REPO_URL_CLEAN}" \
+        --path "${CHART_PATH}" \
+        --dest-namespace "${APP_ENV}" \
+        --dest-server https://kubernetes.default.svc \
+        --values "${VALUES_FILE}" \
+        --revision "${CI_COMMIT_BRANCH}" \
+        --sync-policy manual \
+        --sync-option CreateNamespace=true
+    else
+      argocd app set "${APP_NAME}" \
+        --repo "${REPO_URL_CLEAN}" \
+        --path "${CHART_PATH}" \
+        --values "${VALUES_FILE}" \
+        --revision "${CI_COMMIT_BRANCH}" \
+        --dest-namespace "${APP_ENV}" \
+        --dest-server https://kubernetes.default.svc
+    fi
+
+    # 5) Sync & wait
+    argocd app sync "${APP_NAME}" --timeout 60
+    argocd app wait "${APP_NAME}" --timeout 60
