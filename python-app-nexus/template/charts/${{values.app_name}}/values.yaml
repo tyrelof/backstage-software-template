@@ -7,10 +7,10 @@ imagePullSecrets: []
 nameOverride: ""
 fullnameOverride: ""
 serviceAccount:
-  create: false
+  create: true
   automount: true
-  annotations: {}
-  name: ""
+  annotations: {eks.amazonaws.com/role-arn: arn:aws:iam::567540846696:role/<ECRPushRole>}
+  name: "gitlab-job-sa"
 podAnnotations: {}
 podLabels: {}
 podSecurityContext: {}

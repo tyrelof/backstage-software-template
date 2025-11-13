@@ -13,7 +13,9 @@ variables:
   GIT_DEPTH: "1"
   APP_NAME: "${{ values.app_name }}"
   APP_ENV:  "${{ values.app_env }}"
-  IMAGE_REPO: "tyrelfecha/${{ values.app_name }}"
+  AWS_REGION: "${AWS_DEFAULT_REGION}"
+  ECR_REGISTRY: "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
+  IMAGE_REPO: "${ECR_REGISTRY}/${{ values.app_name }}"
   COMMIT_ID: "${CI_COMMIT_SHORT_SHA}"
 
 build:
@@ -25,17 +27,31 @@ build:
   variables:
     DOCKER_CONFIG: /kaniko/.docker
   before_script:
+    - apk add --no-cache python3 py3-pip jq
+    - pip install --no-cache-dir awscli
     - mkdir -p "$DOCKER_CONFIG"
-    - AUTH="$(printf '%s:%s' "$DOCKERHUB_USERNAME" "$DOCKERHUB_TOKEN" | base64 | tr -d '\n')"
-    - printf '{"auths":{"https://index.docker.io/v1/":{"auth":"%s"}}}\n' "$AUTH" > "$DOCKER_CONFIG/config.json"
+    # Create repo if missing (optional but nice)
+    - |
+      aws ecr describe-repositories \
+        --repository-names "${APP_NAME}" \
+        --region "${AWS_REGION}" >/dev/null 2>&1 || \
+      aws ecr create-repository \
+        --repository-name "${APP_NAME}" \
+        --image-scanning-configuration scanOnPush=true \
+        --region "${AWS_REGION}"
+    # Write config.json with base64("AWS:<password>") for ECR
+    - PASS="$(aws ecr get-login-password --region "${AWS_REGION}")"
+    - AUTH="$(printf 'AWS:%s' "$PASS" | base64 | tr -d '\n')"
+    - printf '{"auths":{"https://%s":{"auth":"%s"}}}\n' "${ECR_REGISTRY}" "${AUTH}" > "$DOCKER_CONFIG/config.json"
   script: |
     /kaniko/executor \
       --context "${CI_PROJECT_DIR}" \
       --dockerfile "${CI_PROJECT_DIR}/Dockerfile" \
-      --destination "docker.io/${IMAGE_REPO}:${COMMIT_ID}" \
-      --destination "docker.io/${IMAGE_REPO}:latest" \
+      --destination "${IMAGE_REPO}:${COMMIT_ID}" \
+      --destination "${IMAGE_REPO}:latest" \
       --cache=true \
-      --cache-repo "docker.io/${IMAGE_REPO}"
+      --cache-repo "${IMAGE_REPO}"
+
 
 cd:
   stage: release

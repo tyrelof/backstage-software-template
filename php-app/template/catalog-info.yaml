@@ -1,0 +1,13 @@
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: ${{ values.name }}
+  description: ${{ values.description | default('PHP service') }}
+  annotations:
+    backstage.io/techdocs-ref: dir:.
+    github.com/project-slug: ${{ values.repoSlug || '' }}
+spec:
+  type: service
+  owner: ${{ values.owner }}
+  system: ${{ values.system }}
+  lifecycle: experimental

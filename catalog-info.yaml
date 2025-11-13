@@ -1,0 +1,10 @@
+apiVersion: backstage.io/v1alpha1
+kind: Location
+metadata:
+  name: backstage-software-templates
+  description: All my Backstage software templates
+spec:
+  targets:
+    - ./python-app/template.yaml
+    - ./python-app-gitlab/template.yaml
+    - ./python-app-nexus/template.yaml

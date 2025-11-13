@@ -12,11 +12,11 @@ stages: [build, release]
 variables:
   GIT_DEPTH: "1"
   APP_NAME: "${{ values.app_name }}"
-  APP_ENV: "${{ values.app_env }}"
+  APP_ENV:  "${{ values.app_env }}"
   IMAGE_REPO: "tyrelfecha/${{ values.app_name }}"
   COMMIT_ID: "${CI_COMMIT_SHORT_SHA}"
 
-ci:
+build:
   stage: build
   tags: ["self-hosted","kaniko"]
   image:
@@ -36,10 +36,6 @@ ci:
       --destination "docker.io/${IMAGE_REPO}:latest" \
       --cache=true \
       --cache-repo "docker.io/${IMAGE_REPO}"
-    echo "COMMIT_ID=${COMMIT_ID}" >> build.env
-  artifacts:
-    reports: { dotenv: build.env }
-    expire_in: 1 day
 
 cd:
   stage: release
@@ -53,6 +49,8 @@ cd:
     - git fetch --all
     - git checkout "$CI_COMMIT_REF_NAME"
   script: |
+    set -euo pipefail
+
     # 1) bump values
     FILE="charts/${APP_NAME}/values-${APP_ENV}.yaml"
     yq -i '.image.repository = strenv(IMAGE_REPO)' "$FILE"
@@ -71,16 +69,8 @@ cd:
     argocd login argocd-server.argocd --insecure --grpc-web \
       --username "${ARGOCD_USERNAME:-admin}" --password "$ARGOCD_PASSWORD"
 
-    # 4) Always register a clean repo URL (no CI job token inside)
+    # 4) Register clean repo URL with persistent creds (not the CI job token)
     REPO_URL_CLEAN="https://${CI_SERVER_HOST}/${CI_PROJECT_PATH}.git"
-
-    # If a bad entry with gitlab-ci-token exists, remove it (one-time cleanup)
-    if argocd repo list --output name | grep -Fxq "${CI_REPOSITORY_URL}"; then
-      argocd repo rm "${CI_REPOSITORY_URL}" || true
-    fi
-
-    # (Re)register the clean URL with persistent creds (group/project token)
-    # GitLab tokens over HTTPS use username 'oauth2'
     argocd repo add "${REPO_URL_CLEAN}" \
       --username oauth2 \
       --password "${PROJECT_PUSH_TOKEN}" \
@@ -89,7 +79,7 @@ cd:
     CHART_PATH="charts/${APP_NAME}"
     VALUES_FILE="values-${APP_ENV}.yaml"
 
-    # Ensure the app points to the CLEAN URL
+    # 5) Create/update app, then sync & wait
     if ! argocd app get "${APP_NAME}" >/dev/null 2>&1; then
       argocd app create "${APP_NAME}" \
         --repo "${REPO_URL_CLEAN}" \
@@ -110,6 +100,5 @@ cd:
         --dest-server https://kubernetes.default.svc
     fi
 
-    # 5) Sync & wait
     argocd app sync "${APP_NAME}" --timeout 60
     argocd app wait "${APP_NAME}" --timeout 60
