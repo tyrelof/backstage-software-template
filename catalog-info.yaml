@@ -5,6 +5,6 @@ metadata:
   description: All my Backstage software templates
 spec:
   targets:
-    - ./python-app/template.yaml
+    # - ./python-app/template.yaml
     - ./python-app-gitlab/template.yaml
     - ./python-app-nexus/template.yaml
