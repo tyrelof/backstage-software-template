@@ -1,0 +1,26 @@
+{{- if .Values.reverb.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "${{ values.app_name }}.fullname" . }}-reverb
+  labels:
+    app: {{ include "${{ values.app_name }}.name" . }}
+    component: reverb
+spec:
+  replicas: {{ .Values.reverb.replicas }}
+  selector:
+    matchLabels:
+      app: {{ include "${{ values.app_name }}.name" . }}
+      component: reverb
+  template:
+    metadata:
+      labels:
+        app: {{ include "${{ values.app_name }}.name" . }}
+        component: reverb
+    spec:
+      containers:
+        - name: reverb
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args: {{ toJson .Values.reverb.command }}
+{{- end }}

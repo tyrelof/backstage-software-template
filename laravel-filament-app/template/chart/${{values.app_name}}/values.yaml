@@ -1,0 +1,83 @@
+replicaCount: 1
+
+image:
+  repository: ${{ values.image_repository }}
+  tag: ${{ values.image_tag }}
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  create: false
+  automount: true
+  annotations: {}
+  name: ""
+
+podAnnotations: {}
+podLabels: {}
+
+podSecurityContext: {}
+securityContext: {}
+
+service:
+  type: ClusterIP
+  port: ${{ values.service_port }}
+
+ingress:
+  enabled: true
+  className: "nginx"
+  annotations: {}
+  hosts:
+    - host: ${{ values.domain }}
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
+
+resources: {}
+
+livenessProbe:
+  httpGet:
+    path: /api/v1/healthz
+    port: http
+
+readinessProbe:
+  httpGet:
+    path: /api/v1/healthz
+    port: http
+
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 100
+  targetCPUUtilizationPercentage: 80
+
+volumes: []
+volumeMounts: []
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+# -----------------------
+# Extra processes (pods)
+# -----------------------
+
+workers:
+  # example only – devs can edit/remove/add
+  - name: emails
+    enabled: false
+    replicas: 1
+    command: ["php", "artisan", "queue:work", "--queue=emails"]
+
+  - name: notifications
+    enabled: false
+    replicas: 1
+    command: ["php", "artisan", "queue:work", "--queue=notifications"]
+
+reverb:
+  enabled: false
+  replicas: 1
+  command: ["php", "artisan", "reverb:start"]

@@ -1,0 +1,28 @@
+{{- range .Values.workers }}
+{{- if .enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "${{ values.app_name }}.fullname" $ }}-worker-{{ .name }}
+  labels:
+    app: {{ include "${{ values.app_name }}.name" $ }}
+    component: worker-{{ .name }}
+spec:
+  replicas: {{ .replicas }}
+  selector:
+    matchLabels:
+      app: {{ include "${{ values.app_name }}.name" $ }}
+      component: worker-{{ .name }}
+  template:
+    metadata:
+      labels:
+        app: {{ include "${{ values.app_name }}.name" $ }}
+        component: worker-{{ .name }}
+    spec:
+      containers:
+        - name: worker
+          image: "{{ $.Values.image.repository }}:{{ $.Values.image.tag }}"
+          imagePullPolicy: {{ $.Values.image.pullPolicy }}
+          args: {{ toJson .command }}
+{{- end }}
+{{- end }}
