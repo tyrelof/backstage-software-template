@@ -5,7 +5,7 @@ metadata:
   description: All my Backstage software templates
 spec:
   targets:
-    - ./laravel-Filament-app/template.yaml
+    - ./laravel-filament-app/template.yaml
     # - ./python-app/template.yaml
     # - ./python-app-gitlab/template.yaml
     # - ./python-app-nexus/template.yaml
