@@ -1,49 +1,100 @@
 apiVersion: scaffolder.backstage.io/v1beta3
 kind: Template
 metadata:
-  name: python-template-for-gitlab
-  title: Python flask template For GITLAB
-  description: Provisions a minimalistic flask application
+  name: laravel-filament-gitlab
+  title: Laravel + Filament service (GitLab + EKS)
+  description: Scaffolds a Laravel + Filament app with Helm chart & Dockerfile for EKS
 spec:
-  owner: development
+  owner: platform      # who owns this template in Backstage
   type: service
 
   parameters:
-    - title: Fill in some steps
-      required: [component_id, environment]
+    - title: Service info
+      required: [component_id, ownerPath, gitlabHost, domain, servicePort]
       properties:
         component_id:
-          title: Component name
+          title: Service name
           type: string
-          description: Provide a component (microservice) name
+          description: Name of the microservice / app (used for repo, chart, etc.)
           pattern: '^([a-zA-Z][a-zA-Z0-9]*)(-[a-zA-Z0-9]+)*$'
-        environment:
-          title: Environment
+
+        ownerPath:
+          title: GitLab owner (group/subgroup or username)
+          description: e.g. creative-projects or platform/tools
           type: string
-          enum: [dev, prod]
+          default: creative-projects
+
+        gitlabHost:
+          title: GitLab Host
+          type: string
+          default: nexus.nmscreative.com
+
+        owner:
+          title: Backstage owner (group or user)
+          type: string
+          description: e.g. group:platform or group:development
+          default: group:development
+
+        system:
+          title: Backstage system
+          type: string
+          description: e.g. core-platform, billing, auth
+          default: core-platform
+
+        domain:
+          title: Application domain (host only)
+          type: string
+          description: e.g. sso.popapps.ai
+          default: example.popapps.ai
+
+        servicePort:
+          title: Service port inside the container
+          type: integer
+          default: 80
+
+        imageRepository:
+          title: ECR image repository
+          type: string
+          description: >-
+            Full image repo URI (without tag), e.g.
+            567540846696.dkr.ecr.us-east-2.amazonaws.com/my-laravel-app
+          default: 567540846696.dkr.ecr.us-east-2.amazonaws.com/CHANGE_ME
+
+        imageTag:
+          title: Initial image tag
+          type: string
+          default: latest
 
   steps:
     - id: fetch-base
-      name: Fetch Base
+      name: Fetch base template
       action: fetch:template
       input:
         url: ./template
         values:
-          app_name: ${{ parameters.component_id }}
-          app_env: ${{ parameters.environment }}
+          app_name: ${{ parameters.component_id | lower }}
+          owner: ${{ parameters.owner }}
+          system: ${{ parameters.system }}
+
+          # GitLab slug for catalog-info.yaml
+          gitlab_project_slug: ${{ parameters.ownerPath | lower }}/${{ parameters.component_id | lower }}
+
+          # Helm values
+          image_repository: ${{ parameters.imageRepository }}
+          image_tag: ${{ parameters.imageTag }}
+          domain: ${{ parameters.domain }}
+          service_port: ${{ parameters.servicePort }}
 
     - id: publish
-      name: Publish
+      name: Publish to GitLab
       action: publish:gitlab
       input:
-        repoUrl: gitlab.com?owner=tyrelorde.fecha&repo=${{ parameters.component_id }}
-        repoVisibility: public
+        repoUrl: ${{ parameters.gitlabHost }}?owner=${{ parameters.ownerPath | lower }}&repo=${{ parameters.component_id | lower }}
+        repoVisibility: private
         defaultBranch: main
-        settings:
-          description: This is ${{ parameters.component_id }}
 
     - id: register
-      name: Register
+      name: Register in Backstage catalog
       action: catalog:register
       input:
         repoContentsUrl: ${{ steps['publish'].output.repoContentsUrl }}
@@ -53,3 +104,5 @@ spec:
     links:
       - title: Repository
         url: ${{ steps['publish'].output.remoteUrl }}
+      - title: Open in catalog
+        url: ${{ steps['register'].output.entityRef | parseEntityRef | entityUrl }}
