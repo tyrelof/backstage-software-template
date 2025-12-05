@@ -1,0 +1,68 @@
+name: Deploy to Production
+
+on:
+  workflow_dispatch: {}
+
+env:
+  PLAYBOOK: playbook/deploy_prod.yml
+  IVENTORIES: playbook/inventories/hosts
+
+jobs:
+  release_production:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Ansible and SSH client
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ansible openssh-client
+
+      - name: Setup SSH
+        env:
+          SSH_PRIV_KEY_PROD: ${{ secrets.SSH_PRIV_KEY_PROD }}
+        run: |
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+
+          eval "$(ssh-agent -s)"
+
+          # Create key file for Ansible and ssh-agent
+          echo "$SSH_PRIV_KEY_PROD" | tr -d '\r' > ~/.ssh/id_rsa_prod
+          chmod 600 ~/.ssh/id_rsa_prod
+          ssh-add ~/.ssh/id_rsa_prod
+
+          # Disable strict host key checking
+          printf "Host *\n\tStrictHostKeyChecking no\n\n" > ~/.ssh/config
+
+      - name: Prepare config files
+        env:
+          ECR_AWS_CONFIG: ${{ env.ECR_AWS_CONFIG }}
+          ENV_PROD: ${{ env.ENV_PROD }}
+        run: |
+          cp "$ECR_AWS_CONFIG" .secrets
+          cp "$ENV_PROD" .env_prod
+
+      - name: Copy files to remote
+        env:
+          SSH_PORT_PROD: ${{ env.SSH_PORT_PROD }}
+          REMOTE_USER: ${{ env.REMOTE_USER }}
+          REMOTE_PROD_IP: ${{ env.REMOTE_PROD_IP }}
+        run: |
+          scp -o StrictHostKeyChecking=no -P "$SSH_PORT_PROD" .secrets "$REMOTE_USER@$REMOTE_PROD_IP:/tmp/.secrets"
+          scp -o StrictHostKeyChecking=no -P "$SSH_PORT_PROD" .env_prod "$REMOTE_USER@$REMOTE_PROD_IP:/tmp/.env_prod"
+
+      - name: Run Ansible playbook
+        env:
+          REMOTE_USER: ${{ env.REMOTE_USER }}
+        run: |
+          ANSIBLE_HOST_KEY_CHECKING=False \
+            ansible-playbook \
+              -i "$IVENTORIES" \
+              --extra-vars "target_host=production" \
+              -u "$REMOTE_USER" \
+              --private-key ~/.ssh/id_rsa_prod \
+              "$PLAYBOOK"
