@@ -1,15 +1,16 @@
-# --- Composer Builder (Backend) ---
+# (Frontend – devs build assets locally and commit)
+
+# =====================================
+# 1) Composer build stage (vendor deps)
+# =====================================
 FROM composer:2.5.0 AS vendor
+
 WORKDIR /app
 
-# Copy composer files from template's src/
 COPY ./src/composer.json ./src/composer.lock ./
 
-# Create dirs some packages expect
 RUN mkdir -p database/seeders database/factories
 
-# Install PHP deps (no scripts yet)
-# IMPORTANT: token should come from CI env, not hardcoded
 ARG COMPOSER_AUTH_JSON
 ENV COMPOSER_AUTH="$COMPOSER_AUTH_JSON"
 
@@ -19,25 +20,44 @@ RUN composer install \
     --no-scripts \
     --prefer-dist
 
-# --- Final App Image ---
-FROM public.ecr.aws/h1y8m9v5/nmsai-php8.3.24-fpm-base:latest
+# ============================
+# 2) Final runtime image
+# ============================
+FROM public.ecr.aws/h1y8m9v5/popapps-php8.3.24-fpm-base:latest
 
 WORKDIR /var/www/html
 
-# Copy application source code
+# =======================================
+# App-specific dependencies
+#
+# 1) PHP extensions ONLY
+#    Use this when the app truly needs extra PHP extensions.
+#    Example:
+#    RUN install-php-extensions gd intl redis
+#
+# 2) System packages (RARE, app-specific)
+#    Only for libs like ffmpeg, ImageMagick, etc. that not all apps need.
+#    Coordinate with DevOps before adding here.
+#    Example:
+#    RUN set -eux; \
+#        apt-get update; \
+#        apt-get install -y --no-install-recommends ffmpeg; \
+#        rm -rf /var/lib/apt/lists/*
+#
+# ❌ Do NOT install random tools (git, vim, curl, etc.) here.
+#    Those belong in the base image if truly needed by everyone.
+# =======================================
+
+# Copy application source
 COPY --chown=www-data:www-data ./src .
 
-# Copy PHP dependencies
+# Copy vendor from build stage
 COPY --from=vendor /app/vendor ./vendor
 
-# (Frontend commented out on purpose – devs build assets locally and commit)
-# COPY --from=frontend /app/public/build ./public/build
+# Optional Nginx overrides (dir kept by .gitkeep; may be empty)
+COPY nginx/snippets/ /etc/nginx/conf.d/
 
-# Copy any app-specific s6 services (if needed)
-COPY ./s6-services /etc/services.d/
-RUN chmod -f +x /etc/services.d/*/run || true
-
-# Permissions
+# Laravel permissions
 RUN mkdir -p storage bootstrap/cache \
  && chown -R www-data:www-data storage bootstrap/cache \
  && chmod -R 775 storage bootstrap/cache

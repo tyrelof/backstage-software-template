@@ -1,6 +1,0 @@
-docker run --rm \
-  -u $(id -u):$(id -g) \
-  -v "$(pwd)":/app \
-  -w /app \
-  composer:2 \
-  composer create-project laravel/laravel src

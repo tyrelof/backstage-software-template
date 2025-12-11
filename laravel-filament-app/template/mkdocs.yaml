@@ -1,7 +1,9 @@
-site_name: 'python-app'
-site_description: 'Main documentation for python-app'
-repo_url: https://github.com/tyrelof/python-app
-edit_uri: edit/main/docs
+site_name: '${{ values.app_name }}'
+site_description: 'Documentation for ${{ values.app_name }}'
+
+# GitLab repo URL
+repo_url: 'https://${{ values.gitlab_host }}/${{ values.ownerPath }}/${{ values.app_name }}'
+edit_uri: 'edit/main/docs'
 
 plugins:
   - techdocs-core
@@ -10,3 +12,5 @@ plugins:
 nav:
   - Overview:
       - Getting started: 'docs/index.md'
+
+      

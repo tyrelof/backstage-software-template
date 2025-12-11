@@ -1,0 +1,139 @@
+# version: '3.8'
+
+services:
+  # -------------------
+  # Laravel App
+  # -------------------
+  laravel:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: filament
+    volumes:
+      - ./src/public:/var/www/html/public
+      - ./src/app:/var/www/html/app
+      - ./src/bootstrap:/var/www/html/bootstrap
+      - ./src/config:/var/www/html/config
+      - ./src/database:/var/www/html/database
+      - ./src/resources:/var/www/html/resources
+      - ./src/routes:/var/www/html/routes
+      - ./src/storage:/var/www/html/storage
+      - ./src/tests:/var/www/html/tests
+      - ./src/vendor:/var/www/html/vendor   
+    expose:
+      - "9000"
+    depends_on:
+      - mariadb
+      - redis
+    networks:
+      - shared-network
+
+  horizon:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: horizon
+    entrypoint: ["/entrypoint.sh"]
+    command: ["php", "artisan", "horizon"]
+    volumes:
+      - ./src/bootstrap:/var/www/html/bootstrap
+      - ./src/storage:/var/www/html/storage
+      - ./src/vendor:/var/www/html/vendor   
+    depends_on:
+      - mariadb
+      - redis
+    networks:
+      - shared-network
+
+  reverb:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: reverb
+    entrypoint: ["/entrypoint.sh"]
+    command: ["php", "artisan", "reverb:start"]
+    volumes:
+      - ./src/bootstrap:/var/www/html/bootstrap
+      - ./src/storage:/var/www/html/storage
+      - ./src/vendor:/var/www/html/vendor   
+    depends_on:
+      - mariadb
+      - redis
+    networks:
+      - shared-network
+
+  queue:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: queue
+    entrypoint: ["/entrypoint.sh"]
+    command: ["php", "artisan", "queue:work", "--tries=3"]
+    volumes:
+      - ./src/bootstrap:/var/www/html/bootstrap
+      - ./src/storage:/var/www/html/storage
+      - ./src/vendor:/var/www/html/vendor   
+    depends_on:
+      - mariadb
+      - redis
+    networks:
+      - shared-network
+
+  # -------------------
+  # Nginx
+  # -------------------
+  nginx:
+    build:
+      context: ./nginx
+      dockerfile: Dockerfile
+    container_name: filament-nginx
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/sites/default.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      - laravel 
+    networks:
+      - shared-network
+
+  # -------------------
+  # Redis
+  # -------------------
+  redis:
+    image: redis:alpine
+    container_name: filament-redis
+    command: >
+      /bin/sh -c "redis-server --bind 0.0.0.0 --port 6379 --requirepass password"
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - shared-network
+      
+  # -------------------
+  # MariaDB
+  # -------------------
+  mariadb:
+    image: mariadb:10.6.18
+    container_name: filament-mariadb
+    environment:
+      MYSQL_DATABASE: database
+      MYSQL_USER: user
+      MYSQL_PASSWORD: password
+      MYSQL_ROOT_PASSWORD: rootpassword
+    volumes:
+      - mariadb_data:/var/lib/mysql
+    ports:
+      - "3306:3306"
+    networks:
+      - shared-network
+
+volumes:
+  redis_data:
+  mariadb_data:
+
+networks:
+  shared-network:
+    driver: bridge

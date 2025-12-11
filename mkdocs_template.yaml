@@ -1,0 +1,13 @@
+site_name: '${{ values.app_name }}'
+site_description: 'Documentation for ${{ values.app_name }}'
+
+# GitLab repo URL
+repo_url: 'https://${{ parameters.gitlabHost }}/${{ parameters.ownerPath | lower }}/${{ values.app_name }}'
+edit_uri: 'edit/main/docs'
+
+plugins:
+  - techdocs-core
+
+nav:
+  - Overview:
+      - Introduction: 'docs/index.md'
