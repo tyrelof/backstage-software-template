@@ -73,11 +73,17 @@ spec:
         url: ./template
         values:
           app_name: ${{ parameters.component_id | lower }}
+
+          # Backstage info
           owner: ${{ parameters.owner }}
           system: ${{ parameters.system }}
 
           # GitLab slug for catalog-info.yaml
           gitlab_project_slug: ${{ parameters.ownerPath | lower }}/${{ parameters.component_id | lower }}
+          # GitLab info
+          # gitlab_host: ${{ parameters.gitlabHost }}
+          # gitlab_owner: ${{ parameters.ownerPath | lower }}
+          # gitlab_project_slug: ${{ parameters.ownerPath | lower }}/${{ parameters.component_id | lower }}
 
           # Helm values
           image_repository: ${{ parameters.imageRepository }}

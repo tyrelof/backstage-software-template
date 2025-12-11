@@ -16,12 +16,11 @@
 │   ├── Dockerfile
 │   ├── docs
 │   │   └── index.md
-│   ├── k8s
-│   │   ├── deploy.yaml
-│   │   ├── ingress.yaml
-│   │   └── service.yaml
+│   ├── scripts
+│   │   ├── git-push.sh
 │   ├── Makefile
 │   ├── mkdocs.yaml
+
 │   ├── nginx
 │   │   ├── healthz.conf.sample
 │   │   ├── livewire.conf.sample

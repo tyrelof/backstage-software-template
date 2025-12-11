@@ -83,17 +83,14 @@ services:
   # Nginx
   # -------------------
   nginx:
-    build:
-      context: ./nginx
-      dockerfile: Dockerfile
+    image: nginx:1.27-alpine
     container_name: filament-nginx
     ports:
       - "80:80"
     volumes:
-      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
-      - ./nginx/sites/default.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./nginx/local/default.conf:/etc/nginx/conf.d/default.conf:ro
     depends_on:
-      - laravel 
+      - laravel
     networks:
       - shared-network
 
