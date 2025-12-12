@@ -1,4 +1,26 @@
+# Dependencies / build output
 src/vendor
 src/node_modules
+
+# Env + secrets
 src/.env
+src/.env.*
+
+# Logs / runtime junk
+src/storage/logs
+src/storage/framework/cache
+src/storage/framework/sessions
+src/storage/framework/views
+
+# VCS + editor
 .git
+.gitignore
+.gitattributes
+.vscode
+.idea
+.DS_Store
+
+# Docs/build tooling
+docs
+mkdocs.yaml
+template.yaml

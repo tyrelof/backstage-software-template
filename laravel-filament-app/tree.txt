@@ -15,15 +15,25 @@
 │   ├── docker-compose.yml
 │   ├── Dockerfile
 │   ├── docs
-│   │   └── index.md
-│   ├── scripts
-│   │   ├── git-push.sh
+│   │   ├── healthchecksext.md
+│   │   ├── healthchecks.md
+│   │   ├── index.md
+│   │   └── nginx.md
+│   ├── k8s
+│   │   ├── deploy.yaml
+│   │   ├── ingress.yaml
+│   │   └── service.yaml
 │   ├── Makefile
 │   ├── mkdocs.yaml
-
 │   ├── nginx
-│   │   ├── healthz.conf.sample
-│   │   ├── livewire.conf.sample
-│   │   └── reports.conf.sample
+│   │   ├── local
+│   │   │   └── default.conf
+│   │   └── snippets
+│   │       ├── healthz.conf
+│   │       ├── livewire.conf.sample
+│   │       └── reverb.conf.sample
+│   ├── scripts
+│   │   └── git-push.sh
 │   └── src
 ├── template.yaml
+

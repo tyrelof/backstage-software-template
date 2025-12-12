@@ -1,3 +1,0 @@
-location ^~ /reports/ {
-    try_files $uri /index.php?$query_string;
-}

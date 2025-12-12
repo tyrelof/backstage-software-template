@@ -1,23 +1,17 @@
-# Ignore vendor directory inside PHP source folder
+# PHP deps
 src/vendor/
 
-# Ignore node_modules inside node source folder
+# Node deps
 src/node_modules/
 
-# Ignore Laravel logs and cache (adjust paths if needed)
-containers/php/storage/logs/
-containers/php/src-backup
-containers/php/storage/framework/cache/
+# Laravel runtime
+src/.env
+src/storage/logs/
+src/storage/framework/cache/
+src/storage/framework/sessions/
+src/storage/framework/views/
 
-# Ignore environment variables file
-containers/envs/*
-
-# Ignore OS and editor junk files
+# OS/editor
 .DS_Store
 .idea/
 .vscode/
-
-# Ignore scan logs
-scan-*.log
-.gitleaks-reports/
-vendor

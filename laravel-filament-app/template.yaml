@@ -5,7 +5,7 @@ metadata:
   title: Laravel + Filament service (GitLab + EKS)
   description: Scaffolds a Laravel + Filament app with Helm chart & Dockerfile for EKS
 spec:
-  owner: platform      # who owns this template in Backstage
+  owner: platform
   type: service
 
   parameters:
@@ -78,12 +78,10 @@ spec:
           owner: ${{ parameters.owner }}
           system: ${{ parameters.system }}
 
-          # GitLab slug for catalog-info.yaml
-          gitlab_project_slug: ${{ parameters.ownerPath | lower }}/${{ parameters.component_id | lower }}
           # GitLab info
-          # gitlab_host: ${{ parameters.gitlabHost }}
-          # gitlab_owner: ${{ parameters.ownerPath | lower }}
-          # gitlab_project_slug: ${{ parameters.ownerPath | lower }}/${{ parameters.component_id | lower }}
+          gitlab_host: ${{ parameters.gitlabHost }}
+          gitlab_owner: ${{ parameters.ownerPath | lower }}
+          gitlab_project_slug: ${{ parameters.ownerPath | lower }}/${{ parameters.component_id | lower }}
 
           # Helm values
           image_repository: ${{ parameters.imageRepository }}
@@ -98,6 +96,8 @@ spec:
         repoUrl: ${{ parameters.gitlabHost }}?owner=${{ parameters.ownerPath | lower }}&repo=${{ parameters.component_id | lower }}
         repoVisibility: private
         defaultBranch: main
+        settings:
+          description: Service: ${{ parameters.component_id }}
 
     - id: register
       name: Register in Backstage catalog
