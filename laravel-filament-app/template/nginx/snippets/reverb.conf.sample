@@ -1,10 +1,14 @@
 # WebSocket proxy for Laravel Reverb (enable if your app uses Reverb)
 #
 # Assumes:
-#  - A service/container named "reverb"
+#  - A k8s service or docker container named "reverb"
 #  - Reverb listening on port 8080
 #
 # Adjust path (/reverb) and port if needed.
+
+location = /reverb {
+  return 301 /reverb/;
+}
 
 location /reverb {
     proxy_pass http://reverb:8080;
@@ -14,11 +18,9 @@ location /reverb {
     proxy_set_header Connection "Upgrade";
 
     proxy_set_header Host $host;
-    proxy_set_header X-Real-IP $remote_addr;
-    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
     proxy_set_header X-Forwarded-Proto $scheme;
 
     # Optional: timeouts for long-lived WebSocket connections
-    proxy_read_timeout 60s;
-    proxy_send_timeout 60s;
+    proxy_read_timeout 3600s;
+    proxy_send_timeout 3600s;
 }

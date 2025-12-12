@@ -41,12 +41,12 @@ resources: {}
 
 livenessProbe:
   httpGet:
-    path: /api/v1/healthz
+    path: /healthz
     port: http
 
 readinessProbe:
   httpGet:
-    path: /api/v1/healthz
+    path: /health
     port: http
 
 autoscaling:
@@ -81,3 +81,9 @@ reverb:
   enabled: false
   replicas: 1
   command: ["php", "artisan", "reverb:start"]
+
+metrics:
+  enabled: false
+  path: /metrics
+  scrapeInterval: 30s
+  scrapeTimeout: 10s
