@@ -12,7 +12,7 @@ stages: [build, release]
 variables:
   GIT_DEPTH: "1"
   APP_NAME: "${{ values.app_name }}"
-  APP_ENV: "${{ values.app_env }}"   # stage or prod (scaffolded by Backstage)
+  APP_ENV:  "${{ values.app_env }}"
   AWS_REGION: "${AWS_DEFAULT_REGION}"
   ECR_REGISTRY: "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
   IMAGE_REPO: "${ECR_REGISTRY}/${{ values.app_name }}"
@@ -30,7 +30,6 @@ build:
     - apk add --no-cache python3 py3-pip jq
     - pip install --no-cache-dir awscli
     - mkdir -p "$DOCKER_CONFIG"
-
     # Create repo if missing (optional but nice)
     - |
       aws ecr describe-repositories \
@@ -40,7 +39,6 @@ build:
         --repository-name "${APP_NAME}" \
         --image-scanning-configuration scanOnPush=true \
         --region "${AWS_REGION}"
-
     # Write config.json with base64("AWS:<password>") for ECR
     - PASS="$(aws ecr get-login-password --region "${AWS_REGION}")"
     - AUTH="$(printf 'AWS:%s' "$PASS" | base64 | tr -d '\n')"
@@ -53,7 +51,7 @@ build:
       --destination "${IMAGE_REPO}:latest" \
       --cache=true \
       --cache-repo "${IMAGE_REPO}"
-
+      
 cd:
   stage: release
   tags: ["self-hosted"]
@@ -68,20 +66,8 @@ cd:
   script: |
     set -euo pipefail
 
-    # 0) Sanity
-    if [ -z "${APP_ENV}" ]; then
-      echo "ERROR: APP_ENV is empty. Backstage must scaffold values.app_env (stage|prod)."
-      exit 1
-    fi
-
-    # 1) bump env values file with the freshly built image
+    # 1) bump values
     FILE="charts/${APP_NAME}/values-${APP_ENV}.yaml"
-    if [ ! -f "$FILE" ]; then
-      echo "ERROR: values file not found: $FILE"
-      echo "Make sure chart has values-stage.yaml and values-prod.yaml"
-      exit 1
-    fi
-
     yq -i '.image.repository = strenv(IMAGE_REPO)' "$FILE"
     yq -i '.image.tag = strenv(COMMIT_ID)' "$FILE"
 
@@ -108,30 +94,26 @@ cd:
     CHART_PATH="charts/${APP_NAME}"
     VALUES_FILE="values-${APP_ENV}.yaml"
 
-    # ✅ Future-proofing: stage and prod can coexist
-    ARGO_APP="${APP_NAME}-${APP_ENV}"
-    DEST_NS="${APP_NAME}-${APP_ENV}"
-
     # 5) Create/update app, then sync & wait
-    if ! argocd app get "${ARGO_APP}" >/dev/null 2>&1; then
-      argocd app create "${ARGO_APP}" \
+    if ! argocd app get "${APP_NAME}" >/dev/null 2>&1; then
+      argocd app create "${APP_NAME}" \
         --repo "${REPO_URL_CLEAN}" \
         --path "${CHART_PATH}" \
-        --dest-namespace "${DEST_NS}" \
+        --dest-namespace "${APP_ENV}" \
         --dest-server https://kubernetes.default.svc \
         --values "${VALUES_FILE}" \
         --revision "${CI_COMMIT_BRANCH}" \
         --sync-policy manual \
         --sync-option CreateNamespace=true
     else
-      argocd app set "${ARGO_APP}" \
+      argocd app set "${APP_NAME}" \
         --repo "${REPO_URL_CLEAN}" \
         --path "${CHART_PATH}" \
         --values "${VALUES_FILE}" \
         --revision "${CI_COMMIT_BRANCH}" \
-        --dest-namespace "${DEST_NS}" \
+        --dest-namespace "${APP_ENV}" \
         --dest-server https://kubernetes.default.svc
     fi
 
-    argocd app sync "${ARGO_APP}" --timeout 60
-    argocd app wait "${ARGO_APP}" --timeout 60
+    argocd app sync "${APP_NAME}" --timeout 60
+    argocd app wait "${APP_NAME}" --timeout 60

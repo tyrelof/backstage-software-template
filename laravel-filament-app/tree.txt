@@ -9,20 +9,16 @@
 │   │       │   ├── _helpers.tpl
 │   │       │   ├── ingress.yaml
 │   │       │   ├── reverb.yaml
+│   │       │   ├── servicemonitor.yaml
 │   │       │   ├── service.yaml
 │   │       │   └── worker.yaml
 │   │       └── values.yaml
 │   ├── docker-compose.yml
 │   ├── Dockerfile
 │   ├── docs
-│   │   ├── healthchecksext.md
-│   │   ├── healthchecks.md
+│   │   ├── health-and-metrics.md
 │   │   ├── index.md
 │   │   └── nginx.md
-│   ├── k8s
-│   │   ├── deploy.yaml
-│   │   ├── ingress.yaml
-│   │   └── service.yaml
 │   ├── Makefile
 │   ├── mkdocs.yaml
 │   ├── nginx

@@ -18,6 +18,12 @@ spec:
           description: Name of the microservice / app (used for repo, chart, etc.)
           pattern: '^([a-zA-Z][a-zA-Z0-9]*)(-[a-zA-Z0-9]+)*$'
 
+        appEnv:
+          title: Deploy environment
+          type: string
+          enum: [stage, prod]
+          default: stage
+
         ownerPath:
           title: GitLab owner (group/subgroup or username)
           description: e.g. creative-projects or platform/tools
@@ -73,6 +79,7 @@ spec:
         url: ./template
         values:
           app_name: ${{ parameters.component_id | lower }}
+          app_env: ${{ parameters.appEnv }}
 
           # Backstage info
           owner: ${{ parameters.owner }}

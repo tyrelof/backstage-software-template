@@ -2,20 +2,20 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ include "${{ values.app_name }}.fullname" . }}-reverb
+  name: {{ include "app.fullname" . }}-reverb
   labels:
-    app: {{ include "${{ values.app_name }}.name" . }}
+    {{- include "app.labels" . | nindent 4 }}
     component: reverb
 spec:
   replicas: {{ .Values.reverb.replicas }}
   selector:
     matchLabels:
-      app: {{ include "${{ values.app_name }}.name" . }}
+      {{- include "app.selectorLabels" . | nindent 4 }}
       component: reverb
   template:
     metadata:
       labels:
-        app: {{ include "${{ values.app_name }}.name" . }}
+        {{- include "app.selectorLabels" . | nindent 8 }}
         component: reverb
     spec:
       containers:

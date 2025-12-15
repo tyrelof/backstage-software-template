@@ -1,0 +1,35 @@
+image:
+  repository: ${{ values.image_repository }}
+  tag: ${{ values.image_tag }}
+
+service:
+  port: ${{ values.service_port }}
+
+ingress:
+  hosts:
+    - host: ${{ values.domain }}
+      paths:
+        - path: /
+          pathType: Prefix
+  # Example TLS:
+  # tls:
+  #   - secretName: ${{ values.app_name }}-tls
+  #     hosts:
+  #       - ${{ values.domain }}
+
+resources:
+  requests:
+    cpu: 200m
+    memory: 256Mi
+  limits:
+    cpu: 1000m
+    memory: 1Gi
+
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 70
+
+metrics:
+  enabled: true

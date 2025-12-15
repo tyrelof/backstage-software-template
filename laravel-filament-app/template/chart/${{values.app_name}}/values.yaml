@@ -1,8 +1,8 @@
 replicaCount: 1
 
 image:
-  repository: ${{ values.image_repository }}
-  tag: ${{ values.image_tag }}
+  repository: ""     # override per env or by CI
+  tag: ""            # override per env or by CI
   pullPolicy: IfNotPresent
 
 imagePullSecrets: []
@@ -24,18 +24,14 @@ securityContext: {}
 
 service:
   type: ClusterIP
-  port: ${{ values.service_port }}
+  port: 80      # default container port; override if needed
 
 ingress:
   enabled: true
-  className: "nginx"
+  className: nginx
   annotations: {}
-  hosts:
-    - host: ${{ values.domain }}
-      paths:
-        - path: /
-          pathType: Prefix
-  tls: []
+  hosts: []     # override per env (hostnames are env-specific)
+  tls: []       # override per env
 
 resources: {}
 
@@ -52,7 +48,7 @@ readinessProbe:
 autoscaling:
   enabled: false
   minReplicas: 1
-  maxReplicas: 100
+  maxReplicas: 5
   targetCPUUtilizationPercentage: 80
 
 volumes: []
@@ -65,8 +61,8 @@ affinity: {}
 # Extra processes (pods)
 # -----------------------
 
+# example only – devs can edit/remove/add workers
 workers:
-  # example only – devs can edit/remove/add
   - name: emails
     enabled: false
     replicas: 1
@@ -77,11 +73,13 @@ workers:
     replicas: 1
     command: ["php", "artisan", "queue:work", "--queue=notifications"]
 
+# enable reverb
 reverb:
   enabled: false
   replicas: 1
   command: ["php", "artisan", "reverb:start"]
 
+# enable metrics
 metrics:
   enabled: false
   path: /metrics

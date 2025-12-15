@@ -3,20 +3,20 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ include "${{ values.app_name }}.fullname" $ }}-worker-{{ .name }}
+  name: {{ include "app.fullname" $ }}-worker-{{ .name }}
   labels:
-    app: {{ include "${{ values.app_name }}.name" $ }}
+    {{- include "app.labels" $ | nindent 4 }}
     component: worker-{{ .name }}
 spec:
   replicas: {{ .replicas }}
   selector:
     matchLabels:
-      app: {{ include "${{ values.app_name }}.name" $ }}
+      {{- include "app.selectorLabels" $ | nindent 6 }}
       component: worker-{{ .name }}
   template:
     metadata:
       labels:
-        app: {{ include "${{ values.app_name }}.name" $ }}
+        {{- include "app.selectorLabels" $ | nindent 8 }}
         component: worker-{{ .name }}
     spec:
       containers:
