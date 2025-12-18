@@ -36,7 +36,7 @@ spec:
           default: nexus.nmscreative.com
 
         owner:
-          title: Backstage owner (group or user)
+          title: Backstage user or group that owns this service (for catalog ownership)
           type: string
           description: e.g. group:platform or group:development
           default: group:development
