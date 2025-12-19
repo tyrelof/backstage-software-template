@@ -1,3 +1,5 @@
+replicaCount: 2
+
 image:
   repository: ${{ values.image_repository }}
   tag: ${{ values.image_tag }}
