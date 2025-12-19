@@ -104,7 +104,7 @@ spec:
         repoVisibility: private
         defaultBranch: main
         settings:
-          description: Service: ${{ parameters.component_id }}
+          description: "Service: ${{ parameters.component_id }}"
 
     - id: register
       name: Register in Backstage catalog

@@ -6,6 +6,6 @@ metadata:
 spec:
   targets:
     - ./laravel-filament-app/template.yaml
-    - ./python-app/template.yaml
-    - ./python-app-gitlab/template.yaml
-    - ./python-app-nexus/template.yaml
+    # - ./python-app/template.yaml
+    # - ./python-app-gitlab/template.yaml
+    # - ./python-app-nexus/template.yaml
