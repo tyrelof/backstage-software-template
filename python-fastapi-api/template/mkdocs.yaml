@@ -1,0 +1,26 @@
+site_name: ${{ values.app_name }}
+site_description: FastAPI Service - ${{ values.app_name }}
+docs_dir: docs
+site_dir: site
+theme:
+  name: material
+  palette:
+    - scheme: default
+      primary: blue
+      accent: indigo
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.top
+
+nav:
+  - Home: index.md
+  - API Documentation: api.md
+  - Health Endpoints: health-endpoints.md
+  - GitLab CI: gitlab-ci.md
+  - Kubernetes: kubernetes.md
+  - Deployment: deployment.md
+
+plugins:
+  - search
+  - include-markdown

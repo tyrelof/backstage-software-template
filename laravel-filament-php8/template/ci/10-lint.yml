@@ -1,0 +1,21 @@
+# -------------------------
+# LINT: validate .gitlab-ci.yml
+# -------------------------
+ci_lint:
+  stage: lint
+  tags: ["self-hosted"]
+  image: python:3.12-alpine
+  rules:
+    - changes:
+        - .gitlab-ci.yml
+        - ci/**/*.yml
+        - ci/**/*.yaml
+        - charts/**/values-*.yaml
+  script: |
+    set -e
+    pip install --no-cache-dir yamllint
+
+    yamllint -d "{extends: relaxed, rules: {line-length: disable}}" \
+      .gitlab-ci.yml \
+      $(find ci -type f \( -name '*.yml' -o -name '*.yaml' \) 2>/dev/null) \
+      $(find charts -type f -name 'values-*.yaml' 2>/dev/null)

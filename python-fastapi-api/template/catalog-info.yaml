@@ -1,0 +1,57 @@
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: ${{ values.app_name }}
+  description: FastAPI REST API service
+  tags:
+    - fastapi
+    - python
+    - api
+    - rest
+  annotations:
+    gitlab.com/project-slug: ${{ values.gitlab_project_slug }}
+    backstage.io/techdocs-ref: dir:.
+  
+  links:
+    # ───── App URLs ─────
+    - url: https://${{ values.app_name }}.${{ values.base_domain }}
+      title: Production
+      icon: public
+
+    - url: https://${{ values.app_name }}.stage.${{ values.base_domain }}
+      title: Staging
+      icon: cloud
+
+    # ───── API Documentation ─────
+    - url: https://${{ values.app_name }}.${{ values.base_domain }}/docs
+      title: API Docs (Swagger)
+      icon: code
+
+    - url: https://${{ values.app_name }}.${{ values.base_domain }}/redoc
+      title: API Docs (ReDoc)
+      icon: code
+
+    # ───── Health & Status ─────
+    - url: https://${{ values.app_name }}.${{ values.base_domain }}/health
+      title: Health Check
+      icon: health
+
+    # ───── Argo CD (READ-ONLY) ─────
+    - url: https://argocd.popapps.ai/applications/${{ values.app_name }}-prod
+      title: Argo CD – Production
+      icon: dashboard
+
+    - url: https://argocd.popapps.ai/applications/${{ values.app_name }}-stage
+      title: Argo CD – Staging
+      icon: dashboard
+
+    # ───── Monitoring & Tooling ─────
+    - url: https://grafana.popapps.ai
+      title: Grafana
+      icon: dashboard
+
+spec:
+  type: service
+  lifecycle: development
+  owner: ${{ values.owner }}
+  system: ${{ values.system }}

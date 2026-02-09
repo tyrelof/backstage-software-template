@@ -1,0 +1,397 @@
+# -------------------------
+# OPS: Restart / Migrate / Seed buttons
+# -------------------------
+
+ops_restart_stage:
+  stage: ops
+  needs: []
+  tags: ["self-hosted"]
+  image: public.ecr.aws/h1y8m9v5/argocd-yq:2.11.7
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+      when: manual
+    - when: never
+  script: |
+    set -eu
+    : "${ARGOCD_PASSWORD:?ARGOCD_PASSWORD is empty}"
+    : "${APP_NAME:?APP_NAME is empty}"
+
+    ARGO_APP="${APP_NAME}-stage"
+
+    argocd login argocd-server.argocd --insecure --grpc-web \
+      --username "${ARGOCD_USERNAME:-admin}" --password "$ARGOCD_PASSWORD"
+
+    # Restart ALL Deployments owned by the app (Argo action usually targets app resources)
+    argocd app actions run "$ARGO_APP" restart --kind Deployment
+
+
+ops_restart_prod:
+  stage: ops
+  needs: []
+  tags: ["self-hosted"]
+  image: public.ecr.aws/h1y8m9v5/argocd-yq:2.11.7
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+      when: manual
+    - when: never
+  script: |
+    set -eu
+    : "${ARGOCD_PASSWORD:?ARGOCD_PASSWORD is empty}"
+    : "${APP_NAME:?APP_NAME is empty}"
+
+    : "${CONFIRM_PROD_RESTART:?Set CONFIRM_PROD_RESTART=YES to proceed}"
+    [ "$CONFIRM_PROD_RESTART" = "YES" ] || (echo "Refusing: CONFIRM_PROD_RESTART must be YES" && exit 1)
+
+    ARGO_APP="${APP_NAME}-prod"
+
+    argocd login argocd-server.argocd --insecure --grpc-web \
+      --username "${ARGOCD_USERNAME:-admin}" --password "$ARGOCD_PASSWORD"
+
+    argocd app actions run "$ARGO_APP" restart --kind Deployment
+
+
+ops_migrate_stage:
+  stage: ops
+  needs: []
+  tags: ["self-hosted"]
+  image: public.ecr.aws/bitnami/kubectl:1.30-debian-12
+  resource_group: "migrate-${APP_NAME}-stage"
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+      when: manual
+    - when: never
+  variables:
+    # Optional:
+    # - "" (default) runs against main app deployment: <app>-stage
+    # - "worker-default" runs against: <app>-stage-worker-default
+    # - "reverb" runs against: <app>-stage-reverb
+    DEPLOY_SUFFIX: ""
+  script: |
+    set -eu
+
+    : "${APP_NAME:?APP_NAME is empty}"
+    APP_ENV="stage"
+    NS="${APP_NAME}-${APP_ENV}"
+
+    # Base deployment name in your cluster is <app>-<env>
+    DEPLOY_BASE="${APP_NAME}-${APP_ENV}"
+    if [ -n "${DEPLOY_SUFFIX:-}" ]; then
+      DEPLOY="${DEPLOY_BASE}-${DEPLOY_SUFFIX}"
+    else
+      DEPLOY="${DEPLOY_BASE}"
+    fi
+
+    CM="${APP_NAME}-${APP_ENV}-config"
+    SEC="${APP_NAME}-${APP_ENV}-secrets"
+
+    echo "Namespace: $NS"
+    echo "Target Deployment: $DEPLOY"
+
+    IMAGE="$(kubectl -n "$NS" get deploy "$DEPLOY" -o jsonpath='{.spec.template.spec.containers[0].image}')"
+    echo "Using deployed image: $IMAGE"
+
+    JOB="migrate-${CI_PIPELINE_ID}-${CI_JOB_ID}"
+
+    cat <<YAML | kubectl -n "$NS" apply -f -
+    apiVersion: batch/v1
+    kind: Job
+    metadata:
+      name: ${JOB}
+      labels:
+        app.kubernetes.io/name: ${APP_NAME}
+        app.kubernetes.io/part-of: ${APP_NAME}
+        app.kubernetes.io/component: migrate
+        platform.io/env: ${APP_ENV}
+    spec:
+      backoffLimit: 0
+      ttlSecondsAfterFinished: 3600
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: ${APP_NAME}
+            app.kubernetes.io/component: migrate
+            platform.io/env: ${APP_ENV}
+        spec:
+          restartPolicy: Never
+          containers:
+          - name: migrate
+            image: ${IMAGE}
+            imagePullPolicy: IfNotPresent
+            envFrom:
+              - configMapRef:
+                  name: ${CM}
+              - secretRef:
+                  name: ${SEC}
+            command: ["sh","-lc"]
+            args:
+              - |
+                set -eu
+                cd /var/www/html
+                mkdir -p storage/logs storage/framework/views storage/framework/cache storage/framework/sessions
+                chmod -R 775 storage bootstrap/cache || true
+                php artisan migrate --force --no-interaction
+    YAML
+
+    echo "Waiting for Job to complete: $JOB"
+    kubectl -n "$NS" wait --for=condition=complete "job/$JOB" --timeout=20m
+
+    echo "---- job logs ----"
+    kubectl -n "$NS" logs "job/$JOB" --all-containers=true --tail=-1
+
+
+ops_migrate_prod:
+  stage: ops
+  needs: []
+  tags: ["self-hosted"]
+  image: public.ecr.aws/bitnami/kubectl:1.30-debian-12
+  resource_group: "migrate-${APP_NAME}-prod"
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+      when: manual
+    - when: never
+  variables:
+    DEPLOY_SUFFIX: ""
+  script: |
+    set -eu
+
+    : "${APP_NAME:?APP_NAME is empty}"
+    : "${CONFIRM_PROD_MIGRATE:?Set CONFIRM_PROD_MIGRATE=YES to proceed}"
+    [ "$CONFIRM_PROD_MIGRATE" = "YES" ] || (echo "Refusing: CONFIRM_PROD_MIGRATE must be YES" && exit 1)
+
+    APP_ENV="prod"
+    NS="${APP_NAME}-${APP_ENV}"
+
+    DEPLOY_BASE="${APP_NAME}-${APP_ENV}"
+    if [ -n "${DEPLOY_SUFFIX:-}" ]; then
+      DEPLOY="${DEPLOY_BASE}-${DEPLOY_SUFFIX}"
+    else
+      DEPLOY="${DEPLOY_BASE}"
+    fi
+
+    CM="${APP_NAME}-${APP_ENV}-config"
+    SEC="${APP_NAME}-${APP_ENV}-secrets"
+
+    echo "Namespace: $NS"
+    echo "Target Deployment: $DEPLOY"
+
+    IMAGE="$(kubectl -n "$NS" get deploy "$DEPLOY" -o jsonpath='{.spec.template.spec.containers[0].image}')"
+    echo "Using deployed image: $IMAGE"
+
+    JOB="migrate-${CI_PIPELINE_ID}-${CI_JOB_ID}"
+
+    cat <<YAML | kubectl -n "$NS" apply -f -
+    apiVersion: batch/v1
+    kind: Job
+    metadata:
+      name: ${JOB}
+      labels:
+        app.kubernetes.io/name: ${APP_NAME}
+        app.kubernetes.io/part-of: ${APP_NAME}
+        app.kubernetes.io/component: migrate
+        platform.io/env: ${APP_ENV}
+    spec:
+      backoffLimit: 0
+      ttlSecondsAfterFinished: 3600
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: ${APP_NAME}
+            app.kubernetes.io/component: migrate
+            platform.io/env: ${APP_ENV}
+        spec:
+          restartPolicy: Never
+          containers:
+          - name: migrate
+            image: ${IMAGE}
+            imagePullPolicy: IfNotPresent
+            envFrom:
+              - configMapRef:
+                  name: ${CM}
+              - secretRef:
+                  name: ${SEC}
+            command: ["sh","-lc"]
+            args:
+              - |
+                set -eu
+                cd /var/www/html
+                mkdir -p storage/logs storage/framework/views storage/framework/cache storage/framework/sessions
+                chmod -R 775 storage bootstrap/cache || true
+                php artisan migrate --force --no-interaction
+    YAML
+
+    echo "Waiting for Job to complete: $JOB"
+    kubectl -n "$NS" wait --for=condition=complete "job/$JOB" --timeout=30m
+
+    echo "---- job logs ----"
+    kubectl -n "$NS" logs "job/$JOB" --all-containers=true --tail=-1
+
+
+ops_seed_stage:
+  stage: ops
+  needs: []
+  tags: ["self-hosted"]
+  image: public.ecr.aws/bitnami/kubectl:1.30-debian-12
+  resource_group: "seed-${APP_NAME}-stage"
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+      when: manual
+    - when: never
+  variables:
+    DEPLOY_SUFFIX: ""
+  script: |
+    set -eu
+
+    : "${APP_NAME:?APP_NAME is empty}"
+    APP_ENV="stage"
+    NS="${APP_NAME}-${APP_ENV}"
+
+    DEPLOY_BASE="${APP_NAME}-${APP_ENV}"
+    if [ -n "${DEPLOY_SUFFIX:-}" ]; then
+      DEPLOY="${DEPLOY_BASE}-${DEPLOY_SUFFIX}"
+    else
+      DEPLOY="${DEPLOY_BASE}"
+    fi
+
+    CM="${APP_NAME}-${APP_ENV}-config"
+    SEC="${APP_NAME}-${APP_ENV}-secrets"
+
+    echo "Namespace: $NS"
+    echo "Target Deployment: $DEPLOY"
+
+    IMAGE="$(kubectl -n "$NS" get deploy "$DEPLOY" -o jsonpath='{.spec.template.spec.containers[0].image}')"
+    echo "Using deployed image: $IMAGE"
+
+    JOB="seed-${CI_PIPELINE_ID}-${CI_JOB_ID}"
+
+    cat <<YAML | kubectl -n "$NS" apply -f -
+    apiVersion: batch/v1
+    kind: Job
+    metadata:
+      name: ${JOB}
+      labels:
+        app.kubernetes.io/name: ${APP_NAME}
+        app.kubernetes.io/part-of: ${APP_NAME}
+        app.kubernetes.io/component: seed
+        platform.io/env: ${APP_ENV}
+    spec:
+      backoffLimit: 0
+      ttlSecondsAfterFinished: 3600
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: ${APP_NAME}
+            app.kubernetes.io/component: seed
+            platform.io/env: ${APP_ENV}
+        spec:
+          restartPolicy: Never
+          containers:
+          - name: seed
+            image: ${IMAGE}
+            imagePullPolicy: IfNotPresent
+            envFrom:
+              - configMapRef:
+                  name: ${CM}
+              - secretRef:
+                  name: ${SEC}
+            command: ["sh","-lc"]
+            args:
+              - |
+                set -eu
+                cd /var/www/html
+                mkdir -p storage/logs storage/framework/views storage/framework/cache storage/framework/sessions
+                chmod -R 775 storage bootstrap/cache || true
+                php artisan db:seed --force --no-interaction
+    YAML
+
+    echo "Waiting for Job to complete: $JOB"
+    kubectl -n "$NS" wait --for=condition=complete "job/$JOB" --timeout=30m
+
+    echo "---- job logs ----"
+    kubectl -n "$NS" logs "job/$JOB" --all-containers=true --tail=-1
+
+
+ops_seed_prod:
+  stage: ops
+  needs: []
+  tags: ["self-hosted"]
+  image: public.ecr.aws/bitnami/kubectl:1.30-debian-12
+  resource_group: "seed-${APP_NAME}-prod"
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+      when: manual
+    - when: never
+  variables:
+    DEPLOY_SUFFIX: ""
+  script: |
+    set -eu
+
+    : "${APP_NAME:?APP_NAME is empty}"
+    : "${CONFIRM_PROD_SEED:?Set CONFIRM_PROD_SEED=YES to proceed}"
+    [ "$CONFIRM_PROD_SEED" = "YES" ] || (echo "Refusing: CONFIRM_PROD_SEED must be YES" && exit 1)
+
+    APP_ENV="prod"
+    NS="${APP_NAME}-${APP_ENV}"
+
+    DEPLOY_BASE="${APP_NAME}-${APP_ENV}"
+    if [ -n "${DEPLOY_SUFFIX:-}" ]; then
+      DEPLOY="${DEPLOY_BASE}-${DEPLOY_SUFFIX}"
+    else
+      DEPLOY="${DEPLOY_BASE}"
+    fi
+
+    CM="${APP_NAME}-${APP_ENV}-config"
+    SEC="${APP_NAME}-${APP_ENV}-secrets"
+
+    echo "Namespace: $NS"
+    echo "Target Deployment: $DEPLOY"
+
+    IMAGE="$(kubectl -n "$NS" get deploy "$DEPLOY" -o jsonpath='{.spec.template.spec.containers[0].image}')"
+    echo "Using deployed image: $IMAGE"
+
+    JOB="seed-${CI_PIPELINE_ID}-${CI_JOB_ID}"
+
+    cat <<YAML | kubectl -n "$NS" apply -f -
+    apiVersion: batch/v1
+    kind: Job
+    metadata:
+      name: ${JOB}
+      labels:
+        app.kubernetes.io/name: ${APP_NAME}
+        app.kubernetes.io/part-of: ${APP_NAME}
+        app.kubernetes.io/component: seed
+        platform.io/env: ${APP_ENV}
+    spec:
+      backoffLimit: 0
+      ttlSecondsAfterFinished: 3600
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: ${APP_NAME}
+            app.kubernetes.io/component: seed
+            platform.io/env: ${APP_ENV}
+        spec:
+          restartPolicy: Never
+          containers:
+          - name: seed
+            image: ${IMAGE}
+            imagePullPolicy: IfNotPresent
+            envFrom:
+              - configMapRef:
+                  name: ${CM}
+              - secretRef:
+                  name: ${SEC}
+            command: ["sh","-lc"]
+            args:
+              - |
+                set -eu
+                cd /var/www/html
+                mkdir -p storage/logs storage/framework/views storage/framework/cache storage/framework/sessions
+                chmod -R 775 storage bootstrap/cache || true
+                php artisan db:seed --force --no-interaction
+    YAML
+
+    echo "Waiting for Job to complete: $JOB"
+    kubectl -n "$NS" wait --for=condition=complete "job/$JOB" --timeout=30m
+
+    echo "---- job logs ----"
+    kubectl -n "$NS" logs "job/$JOB" --all-containers=true --tail=-1

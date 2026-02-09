@@ -1,0 +1,15 @@
+{{- if .Values.reverb.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: reverb
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "app.selectorLabels" . | nindent 4 }}
+    component: reverb
+  ports:
+    - name: reverb
+      port: 6001
+      targetPort: 6001
+{{- end }}

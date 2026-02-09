@@ -1,0 +1,19 @@
+workflow:
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+    - when: never
+
+stages: [lint, prep, build, docs, release, ops]
+
+variables:
+  GIT_DEPTH: "1"
+  SYSTEM: "${{ values.system }}"
+  # App settings (Backstage should scaffold these)
+  APP_NAME: "${{ values.app_name }}"
+  ECR_REGISTRY: "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
+  IMAGE_REPO: "${ECR_REGISTRY}/${APP_NAME}"
+  COMMIT_ID: "${CI_COMMIT_SHORT_SHA}"
+  # Docker auth location for BuildKit
+  DOCKER_CONFIG: "/tmp/.docker"
+  # BuildKit cache ref (stored in ECR as a tag)
+  CACHE_REF: "${IMAGE_REPO}:buildcache"

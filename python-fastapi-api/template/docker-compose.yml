@@ -1,0 +1,20 @@
+version: '3.8'
+
+services:
+  app:
+    build: .
+    container_name: ${{ values.app_name }}
+    ports:
+      - "8000:${{ values.service_port }}"
+    environment:
+      - APP_ENV=development
+      - LOG_LEVEL=debug
+    volumes:
+      - ./src:/app/src:ro
+    command: uvicorn src.main:app --reload --host 0.0.0.0 --port ${{ values.service_port }}
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:${{ values.service_port }}/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s

@@ -1,0 +1,203 @@
+# ============================================================
+# DEFAULT VALUES (BASE)
+#
+# This file defines DEFAULTS and PLATFORM CONTRACTS.
+# It must be environment-agnostic.
+#
+# DO NOT put:
+# - environment-specific values (stage/prod)
+# - secrets
+# - domain names
+#
+# Ownership:
+# - Platform team owns this file
+# ============================================================
+
+# ------------------------------------------------------------
+# Application identity
+# ------------------------------------------------------------
+
+# Canonical service identifier.
+# MUST be stable and injected by Backstage.
+# Used for:
+# - SSM secret paths
+# - naming consistency
+serviceName: ""
+
+# ------------------------------------------------------------
+# Image
+# ------------------------------------------------------------
+image:
+  repository: ""
+  tag: ""
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+
+# ------------------------------------------------------------
+# Naming
+# ------------------------------------------------------------
+nameOverride: ""
+fullnameOverride: ""
+
+# ------------------------------------------------------------
+# Service Account
+# ------------------------------------------------------------
+serviceAccount:
+  create: false
+  automount: true
+  annotations: {}
+  name: ""
+
+# ------------------------------------------------------------
+# Pod metadata
+# ------------------------------------------------------------
+podAnnotations: {}
+podLabels: {}
+
+# ------------------------------------------------------------
+# Security
+# ------------------------------------------------------------
+podSecurityContext:
+  fsGroup: 33
+  fsGroupChangePolicy: "OnRootMismatch"
+
+securityContext:
+  runAsUser: 33
+  runAsGroup: 33
+  runAsNonRoot: true
+
+# ------------------------------------------------------------
+# Service / Networking
+# ------------------------------------------------------------
+service:
+  type: ClusterIP
+  port: 80
+
+ingress:
+  enabled: true
+  className: nginx
+  annotations: {}
+  hosts: []
+  tls: []
+
+# ------------------------------------------------------------
+# Probes
+# ------------------------------------------------------------
+startupProbe:
+  httpGet:
+    path: /healthz
+    port: http
+  initialDelaySeconds: 5
+  periodSeconds: 2
+  failureThreshold: 30
+
+livenessProbe:
+  httpGet:
+    path: /healthz
+    port: http
+  periodSeconds: 10
+  timeoutSeconds: 2
+  failureThreshold: 3
+
+readinessProbe:
+  httpGet:
+    path: /ready
+    port: http
+  periodSeconds: 5
+  timeoutSeconds: 2
+  failureThreshold: 3
+
+# ------------------------------------------------------------
+# Resources
+# ------------------------------------------------------------
+resources: {}
+
+# ------------------------------------------------------------
+# Autoscaling
+# ------------------------------------------------------------
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 5
+  targetCPUUtilizationPercentage: 80
+
+# ------------------------------------------------------------
+# Scheduling
+# ------------------------------------------------------------
+volumes: []
+volumeMounts: []
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+# ============================================================
+# PLATFORM CONTEXT (INTERNAL USE)
+#
+# These values describe WHERE the app is running.
+# They are NOT application configuration.
+#
+# Ownership:
+# - Platform team only
+# - Injected by Backstage
+# ============================================================
+platform:
+  context:
+    system: ""   # e.g. popapps, agentix
+    env: ""      # stage | prod
+
+  # ----------------------------------------------------------
+  # Secrets delivery (ESO)
+  # ----------------------------------------------------------
+  secrets:
+    external:
+      enabled: true
+      storeKind: ClusterSecretStore
+      storeName: aws-ssm
+      refreshInterval: 1h
+      deletionPolicy: Delete   # overridden in prod
+
+    # --------------------------------------------------------
+    # Bootstrap secrets (NON-PROD ONLY)
+    #
+    # Allows first boot even if SSM secrets are not ready yet.
+    # Used ONLY for boot-critical values (ex: Laravel APP_KEY).
+    # --------------------------------------------------------
+    bootstrap:
+      enabled: false
+      APP_KEY: ""
+
+# ============================================================
+# Application configuration (NON-SECRET)
+#
+# This maps directly to environment variables.
+# ============================================================
+config: {}
+
+# ============================================================
+# Optional application workloads
+#
+# These are application-level processes, NOT platform services.
+# ============================================================
+
+# -----------------------
+# Queue Workers
+# -----------------------
+workers:
+  - name: emails
+    enabled: false
+    replicas: 1
+    command: ["/entrypoint.sh", "php", "artisan", "queue:work", "--queue=emails"]
+
+  - name: notifications
+    enabled: false
+    replicas: 1
+    command: ["/entrypoint.sh", "php", "artisan", "queue:work", "--queue=notifications"]
+
+# -----------------------
+# Realtime / WebSocket
+# -----------------------
+reverb:
+  enabled: false
+  replicas: 1
+  command: ["/entrypoint.sh", "php", "artisan", "reverb:start"]

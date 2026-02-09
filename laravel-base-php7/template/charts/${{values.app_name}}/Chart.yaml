@@ -1,0 +1,6 @@
+apiVersion: v2
+name: ${{ values.app_name }}
+description: Helm chart for ${{ values.app_name }} Laravel (PHP 7) app
+type: application
+version: 0.1.0
+appVersion: "1.16.0"

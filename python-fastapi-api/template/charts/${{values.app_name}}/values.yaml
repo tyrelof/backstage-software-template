@@ -1,0 +1,82 @@
+# Helm values for ${{ values.app_name }}
+
+replicaCount: 2
+
+image:
+  repository: ${{ values.image_repository }}
+  pullPolicy: IfNotPresent
+  tag: "latest"
+
+imagePullSecrets:
+  - name: ecr-registry
+
+nameOverride: "${{ values.app_name }}"
+fullnameOverride: "${{ values.app_name }}"
+
+serviceAccount:
+  create: true
+  annotations: {}
+  name: "${{ values.app_name }}"
+
+podAnnotations: {}
+
+podSecurityContext:
+  runAsNonRoot: false
+  fsGroup: 1000
+
+securityContext:
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop:
+    - ALL
+  readOnlyRootFilesystem: false
+  runAsNonRoot: false
+  runAsUser: 1000
+
+service:
+  type: ClusterIP
+  port: 80
+  targetPort: ${{ values.service_port }}
+  annotations: {}
+
+ingress:
+  enabled: true
+  className: "nginx"
+  annotations:
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+  hosts:
+    - host: "${{ values.domain_prod }}"
+      paths:
+        - path: /
+          pathType: Prefix
+    - host: "${{ values.domain_stage }}"
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - secretName: "${{ values.app_name }}-tls"
+      hosts:
+        - "${{ values.domain_prod }}"
+        - "${{ values.domain_stage }}"
+
+resources:
+  limits:
+    cpu: 500m
+    memory: 512Mi
+  requests:
+    cpu: 100m
+    memory: 128Mi
+
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 80
+  targetMemoryUtilizationPercentage: 80
+
+env:
+  - name: APP_ENV
+    value: production
+  - name: LOG_LEVEL
+    value: info

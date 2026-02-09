@@ -1,0 +1,7 @@
+include:
+  - local: "ci/00-base.yml"
+  - local: "ci/10-lint.yml"
+  - local: "ci/20-tests.yml"
+  - local: "ci/30-build.yml"
+  - local: "ci/40-release.yml"
+  - local: "ci/50-ops.yml"
