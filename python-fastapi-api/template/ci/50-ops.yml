@@ -22,7 +22,6 @@ ops_restart_stage:
       --username "${ARGOCD_USERNAME:-admin}" --password "$ARGOCD_PASSWORD"
     argocd app actions run "$ARGO_APP" restart --kind Deployment
 
-
 ops_restart_prod:
   stage: ops
   needs: []

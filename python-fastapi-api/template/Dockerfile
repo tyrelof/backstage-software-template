@@ -2,29 +2,31 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-# System dependencies
+# Install dependencies first for caching
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
-    && rm -rf /var/lib/apt/lists/*
+  && rm -rf /var/lib/apt/lists/*
 
-# Copy and install Python dependencies
 COPY requirements.txt .
-RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir --upgrade pip \
+  && pip install --no-cache-dir -r requirements.txt
 
-# Copy application code
-COPY src /app
+# Create user before copying code
+RUN useradd -m -u 1000 appuser
 
-# Create non-root user
-RUN useradd -m -u 1000 appuser && chown -R appuser:appuser /app
+# Copy code and set ownership
+COPY --chown=appuser:appuser src /app
+
 USER appuser
 
-# Expose port (dynamic via environment variable in k8s)
-EXPOSE ${{ values.service_port }}
+# Default port (override in k8s via env PORT)
+ENV PORT=8000
 
-# Health check
+# EXPOSE cannot be dynamic
+EXPOSE 8000
+
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD curl -f http://localhost:${{ values.service_port }}/health || exit 1
+  CMD curl -fsS "http://localhost:${PORT}/health" || exit 1
 
-# Run application
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "${{ values.service_port }}"]
+# Use sh -c so $PORT expands. Note: src content is now in /app root
+CMD ["sh", "-c", "uvicorn main:app --host 0.0.0.0 --port ${PORT}"]

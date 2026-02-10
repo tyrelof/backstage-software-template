@@ -1,27 +1,66 @@
-# Helm values for ${{ values.app_name }}
+# ============================================================
+# DEFAULT VALUES (BASE)
+#
+# This file defines DEFAULTS and PLATFORM CONTRACTS.
+# It must be environment-agnostic.
+#
+# DO NOT put:
+# - environment-specific values (stage/prod)
+# - secrets
+# - domain names
+#
+# Ownership:
+# - Platform team owns this file
+# ============================================================
 
-replicaCount: 2
+# ------------------------------------------------------------
+# Application identity
+# ------------------------------------------------------------
 
+# Canonical service identifier.
+# MUST be stable and injected by Backstage.
+# Used for:
+# - SSM secret paths
+# - naming consistency
+serviceName: ""
+
+# ------------------------------------------------------------
+# Image
+# ------------------------------------------------------------
 image:
-  repository: ${{ values.image_repository }}
+  repository: ""
+  tag: ""
   pullPolicy: IfNotPresent
-  tag: "latest"
 
-imagePullSecrets:
-  - name: ecr-registry
+imagePullSecrets: []
 
-nameOverride: "${{ values.app_name }}"
-fullnameOverride: "${{ values.app_name }}"
+# ------------------------------------------------------------
+# Naming
+# ------------------------------------------------------------
+nameOverride: ""
+fullnameOverride: ""
 
+# ------------------------------------------------------------
+# Service Account
+# ------------------------------------------------------------
 serviceAccount:
-  create: true
+  create: false
+  automount: true
   annotations: {}
-  name: "${{ values.app_name }}"
+  name: ""
 
+# ------------------------------------------------------------
+# Pod metadata
+# ------------------------------------------------------------
 podAnnotations: {}
+podLabels: {}
 
+# ------------------------------------------------------------
+# Security
+# ------------------------------------------------------------
 podSecurityContext:
-  runAsNonRoot: false
+  runAsNonRoot: true
+  runAsUser: 1000
   fsGroup: 1000
 
 securityContext:
@@ -30,53 +69,92 @@ securityContext:
     drop:
     - ALL
   readOnlyRootFilesystem: false
-  runAsNonRoot: false
+  runAsNonRoot: true
   runAsUser: 1000
 
+# ------------------------------------------------------------
+# Service / Networking
+# ------------------------------------------------------------
 service:
   type: ClusterIP
   port: 80
-  targetPort: ${{ values.service_port }}
-  annotations: {}
 
 ingress:
   enabled: true
-  className: "nginx"
-  annotations:
-    cert-manager.io/cluster-issuer: "letsencrypt-prod"
-    nginx.ingress.kubernetes.io/ssl-redirect: "true"
-  hosts:
-    - host: "${{ values.domain_prod }}"
-      paths:
-        - path: /
-          pathType: Prefix
-    - host: "${{ values.domain_stage }}"
-      paths:
-        - path: /
-          pathType: Prefix
-  tls:
-    - secretName: "${{ values.app_name }}-tls"
-      hosts:
-        - "${{ values.domain_prod }}"
-        - "${{ values.domain_stage }}"
+  className: nginx
+  annotations: {}
+  hosts: []
+  tls: []
 
-resources:
-  limits:
-    cpu: 500m
-    memory: 512Mi
-  requests:
-    cpu: 100m
-    memory: 128Mi
+# ------------------------------------------------------------
+# Probes
+# ------------------------------------------------------------
+livenessProbe:
+  httpGet:
+    path: /health
+    port: http
+  periodSeconds: 10
+  timeoutSeconds: 2
+  failureThreshold: 3
 
+readinessProbe:
+  httpGet:
+    path: /ready
+    port: http
+  periodSeconds: 5
+  timeoutSeconds: 2
+  failureThreshold: 3
+
+# ------------------------------------------------------------
+# Resources
+# ------------------------------------------------------------
+resources: {}
+
+# ------------------------------------------------------------
+# Autoscaling
+# ------------------------------------------------------------
 autoscaling:
-  enabled: true
-  minReplicas: 2
-  maxReplicas: 10
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 5
   targetCPUUtilizationPercentage: 80
-  targetMemoryUtilizationPercentage: 80
 
-env:
-  - name: APP_ENV
-    value: production
-  - name: LOG_LEVEL
-    value: info
+# ============================================================
+# PLATFORM CONTEXT (INTERNAL USE)
+#
+# These values describe WHERE the app is running.
+# They are NOT application configuration.
+#
+# Ownership:
+# - Platform team only
+# - Injected by Backstage
+# ============================================================
+platform:
+  context:
+    system: ""   # e.g. popapps, agentix
+    env: ""      # stage | prod
+
+  # ----------------------------------------------------------
+  # Secrets delivery via External Secrets Operator (ESO)
+  # Pulls from AWS SSM parameters created by CI/CD
+  # ----------------------------------------------------------
+  secrets:
+    external:
+      enabled: true
+      storeKind: ClusterSecretStore
+      storeName: aws-ssm
+      refreshInterval: 1h
+      deletionPolicy: Delete
+
+# ============================================================
+# Application configuration (NON-SECRET)
+#
+# This maps directly to environment variables via ConfigMap.
+# ============================================================
+config: {}
+
+# ============================================================
+# Additional environment variables
+# ============================================================
+env: []
+

@@ -25,20 +25,20 @@ cd_stage_deploy:
   script: |
     set -euo pipefail
     export APP_ENV="stage"
-    
+
     : "${PROJECT_PUSH_TOKEN:?PROJECT_PUSH_TOKEN is empty}"
     : "${ARGOCD_PASSWORD:?ARGOCD_PASSWORD is empty}"
-    
+
     FILE="charts/${APP_NAME}/values-${APP_ENV}.yaml"
     if [ ! -f "$FILE" ]; then
       echo "ERROR: values file not found: $FILE"
       exit 1
     fi
-    
+
     # Update image repository and tag
     yq -i '.image.repository = strenv(IMAGE_REPO)' "$FILE"
     yq -i '.image.tag = strenv(COMMIT_ID)' "$FILE"
-    
+
     # Commit changes if values changed
     if ! git diff --quiet -- "$FILE"; then
       git add "$FILE"
@@ -47,19 +47,19 @@ cd_stage_deploy:
     else
       echo "No values change"
     fi
-    
+
     # ArgoCD sync
     argocd login argocd-server.argocd --insecure --grpc-web \
       --username "${ARGOCD_USERNAME:-admin}" --password "$ARGOCD_PASSWORD"
-    
+
     REPO_URL_CLEAN="https://${CI_SERVER_HOST}/${CI_PROJECT_PATH}.git"
     argocd repo add "${REPO_URL_CLEAN}" --username oauth2 --password "${PROJECT_PUSH_TOKEN}" --upsert
-    
+
     CHART_PATH="charts/${APP_NAME}"
     VALUES_FILE="values-${APP_ENV}.yaml"
     ARGO_APP="${APP_NAME}-${APP_ENV}"
     DEST_NS="${APP_NAME}-${APP_ENV}"
-    
+
     if ! argocd app get "${ARGO_APP}" >/dev/null 2>&1; then
       argocd app create "${ARGO_APP}" \
         --repo "${REPO_URL_CLEAN}" \
@@ -74,9 +74,10 @@ cd_stage_deploy:
       argocd app set "${ARGO_APP}" \
         --values "${VALUES_FILE}"
     fi
-    
+
     # Sync application
-    argocd app sync "${ARGO_APP}" --wait
+    argocd app sync "${ARGO_APP}"
+    argocd app wait "${ARGO_APP}" --health --operation --timeout 600
 
 # Deploy to PRODUCTION: Update values with SAME image tag and sync with ArgoCD
 cd_prod_deploy:
@@ -101,20 +102,20 @@ cd_prod_deploy:
   script: |
     set -euo pipefail
     export APP_ENV="prod"
-    
+
     : "${PROJECT_PUSH_TOKEN:?PROJECT_PUSH_TOKEN is empty}"
     : "${ARGOCD_PASSWORD:?ARGOCD_PASSWORD is empty}"
-    
+
     FILE="charts/${APP_NAME}/values-${APP_ENV}.yaml"
     if [ ! -f "$FILE" ]; then
       echo "ERROR: values file not found: $FILE"
       exit 1
     fi
-    
+
     # Update image repository and tag (SAME image from staging)
     yq -i '.image.repository = strenv(IMAGE_REPO)' "$FILE"
     yq -i '.image.tag = strenv(COMMIT_ID)' "$FILE"
-    
+
     # Commit changes if values changed
     if ! git diff --quiet -- "$FILE"; then
       git add "$FILE"
@@ -123,19 +124,19 @@ cd_prod_deploy:
     else
       echo "No values change"
     fi
-    
+
     # ArgoCD sync
     argocd login argocd-server.argocd --insecure --grpc-web \
       --username "${ARGOCD_USERNAME:-admin}" --password "$ARGOCD_PASSWORD"
-    
+
     REPO_URL_CLEAN="https://${CI_SERVER_HOST}/${CI_PROJECT_PATH}.git"
     argocd repo add "${REPO_URL_CLEAN}" --username oauth2 --password "${PROJECT_PUSH_TOKEN}" --upsert
-    
+
     CHART_PATH="charts/${APP_NAME}"
     VALUES_FILE="values-${APP_ENV}.yaml"
     ARGO_APP="${APP_NAME}-${APP_ENV}"
     DEST_NS="${APP_NAME}-${APP_ENV}"
-    
+
     if ! argocd app get "${ARGO_APP}" >/dev/null 2>&1; then
       argocd app create "${ARGO_APP}" \
         --repo "${REPO_URL_CLEAN}" \
@@ -150,6 +151,7 @@ cd_prod_deploy:
       argocd app set "${ARGO_APP}" \
         --values "${VALUES_FILE}"
     fi
-    
+
     # Sync application
-    argocd app sync "${ARGO_APP}" --wait
+    argocd app sync "${ARGO_APP}"
+    argocd app wait "${ARGO_APP}" --health --operation --timeout 600

@@ -50,7 +50,9 @@ Returns application status.
 
 ## Adding New Endpoints
 
-Create new endpoints in `src/main.py`:
+Create new endpoints in `src/app/routers/`:
+
+1. Create a new router file, e.g., `src/app/routers/items.py`:
 
 ```python
 from fastapi import APIRouter
@@ -60,8 +62,14 @@ router = APIRouter(prefix="/api/v1", tags=["items"])
 @router.get("/items/{item_id}")
 async def get_item(item_id: int):
     return {"item_id": item_id}
+```
 
-app.include_router(router)
+2. Register the router in `src/main.py`:
+
+```python
+from app.routers import items
+
+app.include_router(items.router)
 ```
 
 ## Request/Response Models

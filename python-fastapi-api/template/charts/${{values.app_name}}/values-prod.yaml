@@ -1,9 +1,76 @@
-# Production environment values
-replicaCount: 2
+# ============================================================
+# PRODUCTION ENVIRONMENT VALUES
+#
+# Ownership:
+# - Platform controls platform.*
+# - App teams control config.*
+# ============================================================
+
+# ------------------------------------------------------------
+# Identity
+# ------------------------------------------------------------
+serviceName: ${{ values.app_name }}
+
+# ------------------------------------------------------------
+# Platform context
+# ------------------------------------------------------------
+platform:
+  context:
+    system: ${{ values.system }}
+    env: prod
+
+  secrets:
+    external:
+      refreshInterval: 1h
+      deletionPolicy: Retain  # Keep secrets if release is deleted
+
+# ------------------------------------------------------------
+# Application configuration (NON-SECRET)
+# ------------------------------------------------------------
+config:
+  APP_NAME: ""
+  APP_ENV: "production"
+  APP_DEBUG: "false"
+  LOG_LEVEL: "info"
+
+# ------------------------------------------------------------
+# Runtime
+# ------------------------------------------------------------
+replicaCount: 1
 
 image:
+  repository: ${{ values.image_repository }}
+  tag: ${{ values.image_tag }}
   pullPolicy: Always
 
+podLabels:
+  platform.io/app: ${{ values.app_name }}
+  platform.io/env: prod
+  platform.io/system: ${{ values.system }}
+
+service:
+  port: 8000
+
+ingress:
+  className: nginx
+  annotations:
+    cert-manager.io/cluster-issuer: le-prod
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/hsts: "true"
+    nginx.ingress.kubernetes.io/hsts-max-age: "31536000"
+  hosts:
+    - host: ${{ values.domain_prod }}
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - secretName: ${{ values.app_name }}-tls-prod
+      hosts:
+        - ${{ values.domain_prod }}
+
+# ------------------------------------------------------------
+# Resources (production - higher than stage)
+# ------------------------------------------------------------
 resources:
   limits:
     cpu: 500m
@@ -12,9 +79,13 @@ resources:
     cpu: 100m
     memory: 128Mi
 
+# ------------------------------------------------------------
+# Autoscaling (production - higher scale)
+# ------------------------------------------------------------
 autoscaling:
-  enabled: true
+  enabled: false
   minReplicas: 2
   maxReplicas: 10
   targetCPUUtilizationPercentage: 80
   targetMemoryUtilizationPercentage: 80
+

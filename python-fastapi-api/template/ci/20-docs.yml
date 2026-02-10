@@ -1,0 +1,44 @@
+# -------------------------
+# DOCS: build & publish TechDocs
+# -------------------------
+techdocs_publish:
+  stage: docs
+  tags: ["self-hosted"]
+  image: node:20-alpine
+  variables:
+    AWS_DEFAULT_REGION: "${AWS_REGION}"
+  rules:
+    # If pipeline is NOT a normal push (trigger/web/api), run anyway on main
+    - if: '$CI_COMMIT_BRANCH == "main" && $CI_PIPELINE_SOURCE != "push"'
+      when: on_success
+    # Normal push behavior: run only when docs inputs changed
+    - if: '$CI_COMMIT_BRANCH == "main"'
+      changes:
+        - docs/**/*
+        - mkdocs.yaml
+        - catalog-info.yaml
+      when: on_success
+    - when: never
+  before_script: |
+    set -euo pipefail
+    apk add --no-cache python3 py3-pip py3-virtualenv git
+
+    # Create venv so pip is allowed (PEP 668)
+    python3 -m venv .venv
+    . .venv/bin/activate
+    pip install --no-cache-dir "mkdocs-techdocs-core<2" mkdocs-material mkdocs-include-markdown-plugin
+
+    npm i -g @techdocs/cli
+
+    : "${TECHDOCS_S3_BUCKET:?TECHDOCS_S3_BUCKET is empty}"
+    : "${AWS_REGION:?AWS_REGION is empty}"
+  script: |
+    set -euo pipefail
+    . .venv/bin/activate
+
+    techdocs-cli generate --no-docker --source-dir . --output-dir site
+    techdocs-cli publish \
+      --publisher-type awsS3 \
+      --storage-name "${TECHDOCS_S3_BUCKET}" \
+      --directory site \
+      --entity "default/Component/${APP_NAME}"

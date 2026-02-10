@@ -1,14 +1,25 @@
 lint:
   stage: lint
+  tags: ["self-hosted"]
   image: python:3.11-slim
+  variables:
+    PIP_CACHE_DIR: "$CI_PROJECT_DIR/.cache/pip"
   before_script:
+    - python -V
     - pip install --upgrade pip
-    - pip install ruff black isort
+    - pip install --cache-dir "$PIP_CACHE_DIR" ruff black isort yamllint
+    - pip install --cache-dir "$PIP_CACHE_DIR" -r requirements.txt
   script:
-    - echo "Running code quality checks..."
-    - ruff check src/ --fix
-    - black src/ --check --quiet
-    - isort src/ --check-only --quiet
+    - echo "Running YAML lint (repo yaml only)..."
+    - yamllint . || true
+
+    - echo "Running Helm lint..."
+    - apt-get update && apt-get install -y curl ca-certificates && rm -rf /var/lib/apt/lists/*
+    - curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+    - helm lint "charts/${APP_NAME}" || true
+
+    - echo "Running code checks..."
+    - ruff check src/
+    - black src/ --check
+    - isort src/ --check-only
   allow_failure: true
-  rules:
-    - if: '$CI_COMMIT_BRANCH == "main"'

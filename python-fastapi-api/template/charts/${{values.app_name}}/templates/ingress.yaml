@@ -2,16 +2,16 @@
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
-  name: {{ include "${{ values.app_name }}.fullname" . }}
+  name: {{ include "app.fullname" . }}
   labels:
-    {{- include "${{ values.app_name }}.labels" . | nindent 4 }}
+    {{- include "app.labels" . | nindent 4 }}
   {{- with .Values.ingress.annotations }}
   annotations:
     {{- toYaml . | nindent 4 }}
   {{- end }}
 spec:
-  {{- if .Values.ingress.className }}
-  ingressClassName: {{ .Values.ingress.className }}
+  {{- with .Values.ingress.className }}
+  ingressClassName: {{ . }}
   {{- end }}
   {{- if .Values.ingress.tls }}
   tls:
@@ -30,12 +30,14 @@ spec:
         paths:
           {{- range .paths }}
           - path: {{ .path }}
-            pathType: {{ .pathType }}
+            {{- with .pathType }}
+            pathType: {{ . }}
+            {{- end }}
             backend:
               service:
-                name: {{ include "${{ values.app_name }}.fullname" $ }}
+                name: {{ .serviceName | default (include "app.fullname" $) }}
                 port:
-                  number: {{ $.Values.service.port }}
+                  number: {{ .servicePort | default $.Values.service.port }}
           {{- end }}
     {{- end }}
 {{- end }}

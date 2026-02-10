@@ -3,7 +3,7 @@ workflow:
     - if: '$CI_COMMIT_BRANCH == "main"'
     - when: never
 
-stages: [lint, test, build, docs, release, ops]
+stages: [lint, test, docs, prep, build, release, ops]
 
 variables:
   GIT_DEPTH: "1"
@@ -23,4 +23,3 @@ variables:
 cache:
   paths:
     - .cache/pip
-    - .venv/

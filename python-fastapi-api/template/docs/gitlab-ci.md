@@ -1,35 +1,46 @@
 # GitLab CI/CD Pipeline
 
-The GitLab CI/CD pipeline automates testing, building, and deployment of the FastAPI service using ArgoCD for GitOps-based deployments.
+The GitLab CI/CD pipeline automates platform prerequisites, testing, building, and deployment of the FastAPI service using ArgoCD for GitOps-based deployments.
 
 ## Pipeline Stages
 
-### 1. Lint (Stage: 10-lint.yml)
+### 1. Prep (Stage: 30-prep.yml)
+- **platform_prereqs**: Creates AWS ECR repository if it doesn't exist
+  - Enables image scanning on push for security
+  - Self-service: developers don't need to manually create repos
+- **platform_ssm_placeholders**: Creates AWS SSM parameters for secrets
+  - Creates `/${SYSTEM}/${APP_NAME}/stage/app` - staging secrets placeholder
+  - Creates `/${SYSTEM}/${APP_NAME}/prod/app` - production secrets placeholder
+  - Uses SecureString type for encrypted storage
+  - Allows operators to populate secrets via AWS SSM console or CLI
+
+### 2. Lint (Stage: 10-lint.yml)
 - Code quality checks using **ruff**
 - Code formatting verification with **black**
 - Import sorting with **isort**
 - Allows failure to not block pipeline
 
-### 2. Test (Stage: 20-tests.yml)
+### 3. Test (Stage: 20-tests.yml)
 - Unit tests using **pytest**
 - Code coverage reporting
 - Coverage artifacts stored for analysis
 - Allows failure but provides metrics
 
-### 3. Build (Stage: 30-build.yml) - `ci_build_image`
-- Docker image build (runs once per commit)
+### 4. Build (Stage: 30-build.yml) - `ci_build_image`
+- Docker image build (runs once per commit) using BuildKit
+- Depends on: `platform_prereqs`, `platform_ssm_placeholders` (ensures ECR repo exists)
 - Pushes to AWS ECR with tag `$COMMIT_ID` (short SHA)
 - Tags as `latest` for quick reference
 - **Key**: Image is built once and reused for all environments
 
-### 4. Release (Stage: 40-release.yml) - `cd_stage_deploy`
+### 5. Release (Stage: 40-release.yml) - `cd_stage_deploy`
 - **Automatic** deployment to staging (only if src/, Dockerfile, or requirements.txt changed)
-- Updates `charts/values-stage.yaml` with new image tag
+- Updates `charts/${APP_NAME}/values-stage.yaml` with new image tag
 - Registers/updates ArgoCD application for staging
 - Syncs application with ArgoCD
 - **Same image** from build stage is deployed
 
-### 5. Operations (Stage: 50-ops.yml)
+### 6. Operations (Stage: 50-ops.yml)
 - **Production deployment** (`cd_prod_deploy`) - **Manual approval required**
   - Triggered after staging deployment succeeds
   - Updates `charts/values-prod.yaml` with **same image tag** as staging
@@ -44,21 +55,27 @@ The GitLab CI/CD pipeline automates testing, building, and deployment of the Fas
 ```
 Commit to main
     ↓
-Lint → Test → Build image (once)
+Prep (ECR repo + SSM placeholders)
+    ↓
+Lint → Test → Build image (once via BuildKit)
                 ↓
             Staging deployment (automatic if code changed)
                 ↓
             Production deployment (manual, same image)
+                ↓
+            Operations (restart buttons)
 ```
 
 ### Key Benefits
 
-1. **Single Build**: Image is built once and promoted through environments
-2. **Same Code**: Staging and production run identical image (only config differs)
-3. **ArgoCD Integration**: GitOps-based deployment with version control
-4. **Manual Promotion**: Production requires explicit approval (manual trigger)
-5. **Staged Testing**: Changes tested in staging before production
-6. **Fast Rollback**: Easy rollback via ArgoCD if issues arise
+1. **Self-Service Platform**: ECR repo and SSM parameters auto-created on first deploy
+2. **Single Build**: Image built once via BuildKit and promoted through environments
+3. **Same Code**: Staging and production run identical image (only config differs)
+4. **ArgoCD Integration**: GitOps-based deployment with version control
+5. **Manual Promotion**: Production requires explicit approval (manual trigger)
+6. **Staged Testing**: Changes tested in staging before production
+7. **Fast Rollback**: Easy rollback via ArgoCD if issues arise
+8. **Encrypted Secrets**: SSM SecureString storage for app configuration
 
 ## Environment Variables
 
@@ -67,11 +84,32 @@ Required CI/CD variables in GitLab:
 ```
 AWS_ACCOUNT_ID          # Your AWS account ID
 AWS_REGION              # AWS region (e.g., us-east-2)
-CI_REGISTRY_USER        # GitLab registry username
-CI_REGISTRY_PASSWORD    # GitLab registry password
+AWS_ECR_REGISTRY        # ECR registry (e.g., 123456789.dkr.ecr.us-east-2.amazonaws.com)
+SYSTEM                  # System name for SSM paths (e.g., popapps)
+CI_REGISTRY_USER        # GitLab registry username (for caching)
+CI_REGISTRY_PASSWORD    # GitLab registry password (for caching)
 PROJECT_PUSH_TOKEN      # GitLab push token for Git operations
 ARGOCD_USERNAME         # ArgoCD username (default: admin)
 ARGOCD_PASSWORD         # ArgoCD password
+```
+
+## SSM Secrets Structure
+
+The pipeline creates SSM parameters in this structure:
+
+```
+/${SYSTEM}/${APP_NAME}/stage/app   → Staging app secrets (JSON)
+/${SYSTEM}/${APP_NAME}/prod/app    → Production app secrets (JSON)
+```
+
+**Example**: Populate via AWS CLI:
+
+```bash
+aws ssm put-parameter \
+  --name "/popapps/myapp/stage/app" \
+  --type "SecureString" \
+  --value '{"DB_PASSWORD":"secret123"}' \
+  --overwrite
 ```
 
 ## Pipeline Configuration
@@ -82,9 +120,10 @@ Includes modular CI files:
 - `ci/00-base.yml` - Base variables and caching
 - `ci/10-lint.yml` - Code quality checks
 - `ci/20-tests.yml` - Unit testing
-- `ci/30-build.yml` - Docker build and push (single build)
+- `ci/30-prep.yml` - Platform prerequisites (ECR repo, SSM placeholders)
+- `ci/30-build.yml` - Docker build via BuildKit and push to ECR
 - `ci/40-release.yml` - Stage deployment via ArgoCD
-- `ci/50-ops.yml` - Production deployment and operations
+- `ci/50-ops.yml` - Production deployment and manual operations
 
 ## How It Works
 

@@ -4,7 +4,7 @@ ci_build_image:
   image:
     name: public.ecr.aws/h1y8m9v5/buildkit-awscli
     entrypoint: [""]
-  needs: []
+  needs: ["platform_prereqs", "platform_ssm_placeholders"]
   rules:
     - if: '$CI_COMMIT_BRANCH == "main"'
       changes:
@@ -15,7 +15,10 @@ ci_build_image:
 
   before_script: |
     set -euo pipefail
+    unset DOCKER_AUTH_CONFIG || true
+
     : "${AWS_REGION:?AWS_REGION is empty}"
+    : "${ECR_REGISTRY:?ECR_REGISTRY is empty}"
     : "${AWS_ACCOUNT_ID:?AWS_ACCOUNT_ID is empty}"
 
     # Write docker auth for ECR into DOCKER_CONFIG/config.json

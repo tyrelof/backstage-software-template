@@ -24,16 +24,28 @@ metadata:
 
     # ───── API Documentation ─────
     - url: https://${{ values.app_name }}.${{ values.base_domain }}/docs
-      title: API Docs (Swagger)
+      title: API Docs (Swagger) – Prod
       icon: code
-
+    
+    - url: https://${{ values.app_name }}.stage.${{ values.base_domain }}/docs
+      title: API Docs (Swagger) – Stage
+      icon: code
+    
     - url: https://${{ values.app_name }}.${{ values.base_domain }}/redoc
-      title: API Docs (ReDoc)
+      title: API Docs (ReDoc) – Prod
+      icon: code
+    
+    - url: https://${{ values.app_name }}.stage.${{ values.base_domain }}/redoc
+      title: API Docs (ReDoc) – Stage
       icon: code
 
     # ───── Health & Status ─────
     - url: https://${{ values.app_name }}.${{ values.base_domain }}/health
-      title: Health Check
+      title: Health Check – Prod
+      icon: health
+
+    - url: https://${{ values.app_name }}.stage.${{ values.base_domain }}/health
+      title: Health Check – Stage
       icon: health
 
     # ───── Argo CD (READ-ONLY) ─────
