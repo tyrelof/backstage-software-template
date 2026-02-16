@@ -1,0 +1,14 @@
+version: "3.9"
+
+services:
+  web:
+    image: node:20-alpine
+    working_dir: /app
+    volumes:
+      - .:/app
+    ports:
+      - "3000:3000"
+    environment:
+      NODE_ENV: development
+      NEXT_TELEMETRY_DISABLED: "1"
+    command: sh -lc "npm install --prefer-offline --no-audit && npm run dev"

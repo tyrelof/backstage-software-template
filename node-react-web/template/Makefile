@@ -1,0 +1,103 @@
+# ============================================================
+# Makefile - React + Vite Template
+# Requires: Docker
+# ============================================================
+
+.PHONY: help install dev lint build preview clean docker-build docker-run docker-clean \
+	install-docker dev-docker lint-docker build-docker docker-build preview-docker \
+	compose-up compose-down compose-logs compose-build compose-ps
+
+# -------|---------------------
+# Config
+# -------|---------------------
+NODE_IMAGE ?= node:20-alpine
+APP_PORT ?= 5173
+APP_IMAGE ?= ${{ values.app_name }}:dev
+PROJECT_DIR := $(shell pwd)
+
+define NODE_DOCKER_RUN
+docker run --rm \
+	-v "$(PROJECT_DIR):/app" \
+	-w /app \
+	$(NODE_IMAGE) \
+	sh -lc
+endef
+
+# -------|---------------------
+# Help
+# -------|---------------------
+help:  ## Show all make commands
+	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "%-18s %s\n", $$1, $$2}'
+
+# -------|---------------------
+# Default workflow
+# -------|---------------------
+install: install-docker  ## Install dependencies
+install-docker:  ## Install dependencies inside Docker
+	@$(NODE_DOCKER_RUN) "npm install --prefer-offline --no-audit"
+
+dev: compose-up  ## Run dev server (uses docker-compose)
+dev-docker:  ## Run dev server inside Docker (one-off container)
+	@docker run --rm -it \
+	  -v "$(PROJECT_DIR):/app" \
+	  -w /app \
+	  -p $(APP_PORT):5173 \
+	  $(NODE_IMAGE) \
+	  sh -lc "npm install --prefer-offline --no-audit && npm run dev -- --host"
+
+lint: lint-docker  ## Run lint
+lint-docker:  ## Run lint inside Docker
+	@$(NODE_DOCKER_RUN) "npm install --prefer-offline --no-audit && npm run lint --if-present"
+
+build: build-docker  ## Build for production
+build-docker:  ## Build inside Docker
+	@$(NODE_DOCKER_RUN) "npm install --prefer-offline --no-audit && npm run build"
+
+preview: preview-docker  ## Preview production build locally
+preview-docker:  ## Preview build inside Docker
+	@docker run --rm -it \
+	  -v "$(PROJECT_DIR):/app" \
+	  -w /app \
+	  -p $(APP_PORT):4173 \
+	  $(NODE_IMAGE) \
+	  sh -lc "npm install --prefer-offline --no-audit && npm run preview -- --host"
+
+# -------|---------------------
+# Security checks
+# -------|---------------------
+audit: audit-docker  ## Run npm audit
+audit-docker:  ## Run npm audit inside Docker
+	@$(NODE_DOCKER_RUN) "npm install --prefer-offline --no-audit && npm audit --omit=dev"
+
+clean:  ## Remove build artifacts
+	rm -rf node_modules dist
+
+# -------|---------------------
+# Docker Compose workflow
+# -------|---------------------
+compose-up:  ## Start services with Docker Compose
+	docker compose up -d
+
+compose-down:  ## Stop and remove Docker Compose services
+	docker compose down
+
+compose-logs:  ## View Docker Compose logs
+	docker compose logs -f
+
+compose-build:  ## Build services with Docker Compose
+	docker compose build
+
+compose-ps:  ## Show Docker Compose service status
+	docker compose ps
+
+# -------|---------------------
+# Docker workflow
+# -------|---------------------
+docker-build:  ## Build Docker image
+	docker build -t $(APP_IMAGE) -t ${{ values.app_name }}:$$(git rev-parse --short HEAD) .
+
+docker-run: docker-build  ## Run Docker image
+	docker run --rm -it -p $(APP_PORT):80 $(APP_IMAGE)
+
+docker-clean:  ## Remove Docker images
+	docker rmi $(APP_IMAGE) ${{ values.app_name }}:$$(git rev-parse --short HEAD) 2>/dev/null || true

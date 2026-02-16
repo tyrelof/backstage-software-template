@@ -1,0 +1,43 @@
+# -------------------------
+# OPS: Manual operations - Restart / Debug buttons (NOT part of pipeline flow)
+# -------------------------
+
+ops_restart_stage:
+  stage: ops
+  tags: ["self-hosted"]
+  image: public.ecr.aws/h1y8m9v5/argocd-yq:2.11.7
+  when: manual
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+      when: manual
+    - when: never
+  script: |
+    set -eu
+    : "${ARGOCD_PASSWORD:?ARGOCD_PASSWORD is empty}"
+    : "${APP_NAME:?APP_NAME is empty}"
+
+    ARGO_APP="${APP_NAME}-stage"
+    argocd login argocd-server.argocd --insecure --grpc-web \
+      --username "${ARGOCD_USERNAME:-admin}" --password "$ARGOCD_PASSWORD"
+    argocd app actions run "$ARGO_APP" restart --kind Deployment
+
+ops_restart_prod:
+  stage: ops
+  tags: ["self-hosted"]
+  image: public.ecr.aws/h1y8m9v5/argocd-yq:2.11.7
+  when: manual
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+      when: manual
+    - when: never
+  script: |
+    set -eu
+    : "${ARGOCD_PASSWORD:?ARGOCD_PASSWORD is empty}"
+    : "${APP_NAME:?APP_NAME is empty}"
+    : "${CONFIRM_PROD_RESTART:?Set CONFIRM_PROD_RESTART=YES to proceed}"
+    [ "$CONFIRM_PROD_RESTART" = "YES" ] || (echo "Refusing: CONFIRM_PROD_RESTART must be YES" && exit 1)
+
+    ARGO_APP="${APP_NAME}-prod"
+    argocd login argocd-server.argocd --insecure --grpc-web \
+      --username "${ARGOCD_USERNAME:-admin}" --password "$ARGOCD_PASSWORD"
+    argocd app actions run "$ARGO_APP" restart --kind Deployment

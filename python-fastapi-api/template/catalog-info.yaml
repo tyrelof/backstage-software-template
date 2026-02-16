@@ -11,7 +11,6 @@ metadata:
   annotations:
     gitlab.com/project-slug: ${{ values.gitlab_project_slug }}
     backstage.io/techdocs-ref: dir:.
-  
   links:
     # ───── App URLs ─────
     - url: https://${{ values.app_name }}.${{ values.base_domain }}
@@ -26,15 +25,12 @@ metadata:
     - url: https://${{ values.app_name }}.${{ values.base_domain }}/docs
       title: API Docs (Swagger) – Prod
       icon: code
-    
     - url: https://${{ values.app_name }}.stage.${{ values.base_domain }}/docs
       title: API Docs (Swagger) – Stage
       icon: code
-    
     - url: https://${{ values.app_name }}.${{ values.base_domain }}/redoc
       title: API Docs (ReDoc) – Prod
       icon: code
-    
     - url: https://${{ values.app_name }}.stage.${{ values.base_domain }}/redoc
       title: API Docs (ReDoc) – Stage
       icon: code

@@ -11,8 +11,8 @@ spec:
   selector:
     app: ${{ values.app_name }}
   ports:
-  - name: http
-    port: 80
-    targetPort: http
-    protocol: TCP
+    - name: http
+      port: 80
+      targetPort: http
+      protocol: TCP
   sessionAffinity: None

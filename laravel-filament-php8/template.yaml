@@ -2,8 +2,9 @@ apiVersion: scaffolder.backstage.io/v1beta3
 kind: Template
 metadata:
   name: laravel-filament-php8-gitlab
-  title: Laravel + Filament service (PHP 8) – GitLab + EKS
-  description: Scaffolds a Laravel (PHP 8) application with Filament admin panel, Dockerfile, Helm chart, GitLab CI/CD, and EKS deployment
+  title: Laravel + Filament Admin Panel (PHP 8)
+  description: |
+    Production-ready Laravel 12 + Filament 3 admin application with PHP 8.3. Includes Horizon queue management, Reverb real-time events, background workers, role-based permissions, and comprehensive monitoring. Fully integrated with GitLab CI/CD, Docker, Kubernetes, and automated stage/production deployment.
 spec:
   owner: platform
   type: service
@@ -16,15 +17,22 @@ spec:
           title: Service name
           type: string
           description: |
-            Canonical service identifier
+            Canonical service identifier (lowercase, DNS-friendly)
             
-            Used to name:
-            - GitLab repository
-            - ECR repository
-            - Helm chart
-            - ArgoCD application
-            - Kubernetes namespace
-          pattern: '^([a-zA-Z][a-zA-Z0-9]*)(-[a-zA-Z0-9]+)*$'
+            Used to name your:
+            - GitLab repository on nexus.nmscreative.com
+            - ECR container repository (AWS Elastic Container Registry)
+            - Kubernetes namespace for deployment
+            - Helm chart and ArgoCD application
+            - Docker image tag and runtime references
+            
+            Rules:
+            - Must start with a lowercase letter
+            - Contain only lowercase letters, numbers, and hyphens
+            - Length must be 3-63 characters
+            
+            Examples: admin-panel, user-portal, inventory-system, billing-app, crm-dashboard
+          pattern: '^[a-z][a-z0-9-]{2,62}$'
 
         ownerPath:
           title: GitLab namespace (repo location)

@@ -1,0 +1,20 @@
+extends: default
+
+ignore: |
+  .git/
+  .cache/
+  .tmp-verify/
+  node_modules/
+  charts/**
+  **/*.tpl
+  **/*.tmpl
+  site/**
+
+rules:
+  document-start: disable
+  trailing-spaces: disable
+  line-length:
+    max: 140
+    level: warning
+  truthy:
+    allowed-values: ['true', 'false', 'on', 'off', 'yes', 'no']

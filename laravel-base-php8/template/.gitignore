@@ -1,0 +1,17 @@
+# PHP deps
+src/vendor/
+
+# Node deps
+src/node_modules/
+
+# Laravel runtime
+src/.env
+src/storage/logs/
+src/storage/framework/cache/
+src/storage/framework/sessions/
+src/storage/framework/views/
+
+# OS/editor
+.DS_Store
+.idea/
+.vscode/

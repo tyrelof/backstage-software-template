@@ -23,40 +23,40 @@ spec:
         system: ${{ values.system }}
     spec:
       containers:
-      - name: ${{ values.app_name }}
-        image: ${{ values.image_repository }}:latest
-        imagePullPolicy: Always
-        ports:
-        - name: http
-          containerPort: ${{ values.service_port }}
-          protocol: TCP
-        env:
-        - name: APP_ENV
-          value: "production"
-        - name: LOG_LEVEL
-          value: "info"
-        livenessProbe:
-          httpGet:
-            path: /health
-            port: http
-          initialDelaySeconds: 10
-          periodSeconds: 10
-          timeoutSeconds: 5
-          failureThreshold: 3
-        readinessProbe:
-          httpGet:
-            path: /health
-            port: http
-          initialDelaySeconds: 5
-          periodSeconds: 5
-          timeoutSeconds: 3
-          failureThreshold: 2
-        resources:
-          requests:
-            cpu: "100m"
-            memory: "128Mi"
-          limits:
-            cpu: "500m"
-            memory: "512Mi"
+        - name: ${{ values.app_name }}
+          image: ${{ values.image_repository }}:latest
+          imagePullPolicy: Always
+          ports:
+            - name: http
+              containerPort: ${{ values.service_port }}
+              protocol: TCP
+          env:
+            - name: APP_ENV
+              value: "production"
+            - name: LOG_LEVEL
+              value: "info"
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 2
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
       imagePullSecrets:
-      - name: ecr-registry
+        - name: ecr-registry

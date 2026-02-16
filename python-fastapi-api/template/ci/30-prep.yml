@@ -7,7 +7,7 @@ platform_prereqs:
   image: public.ecr.aws/aws-cli/aws-cli:2.32.31
   rules:
     - changes:
-        - src/**/*
+        - app/**/*
         - Dockerfile
         - charts/**/*
     - when: never
@@ -32,7 +32,7 @@ platform_ssm_placeholders:
     - if: '$CI_COMMIT_BRANCH == "main"'
       changes:
         - charts/**/*
-        - src/**/*
+        - app/**/*
         - Dockerfile
     - when: never
   script: |

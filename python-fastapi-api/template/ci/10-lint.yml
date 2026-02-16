@@ -11,15 +11,18 @@ lint:
     - pip install --cache-dir "$PIP_CACHE_DIR" -r requirements.txt
   script:
     - echo "Running YAML lint (repo yaml only)..."
-    - yamllint . || true
+    - yamllint -c .yamllint .
 
     - echo "Running Helm lint..."
     - apt-get update && apt-get install -y curl ca-certificates && rm -rf /var/lib/apt/lists/*
     - curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
-    - helm lint "charts/${APP_NAME}" || true
+    - helm lint "charts/${APP_NAME}" --set serviceName="${APP_NAME:-lint}"
 
     - echo "Running code checks..."
-    - ruff check src/
-    - black src/ --check
-    - isort src/ --check-only
-  allow_failure: true
+    - ruff check app/
+    - black app/ --check
+    - isort app/ --check-only
+
+    - echo "Running security audit..."
+    - pip install --upgrade pip-audit
+    - pip-audit --desc || true

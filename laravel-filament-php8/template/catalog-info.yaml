@@ -7,11 +7,10 @@ metadata:
     - laravel
     - php8
     - filament
-    - admin
   annotations:
     gitlab.com/project-slug: ${{ values.gitlab_project_slug }}
     backstage.io/techdocs-ref: dir:.
-  
+
   links:
     # ───── App URLs ─────
     - url: https://${{ values.app_name }}.${{ values.base_domain }}

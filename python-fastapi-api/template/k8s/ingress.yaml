@@ -13,28 +13,28 @@ metadata:
 spec:
   ingressClassName: nginx
   tls:
-  - hosts:
-    - ${{ values.domain_prod }}
-    - ${{ values.domain_stage }}
-    secretName: ${{ values.app_name }}-tls
+    - hosts:
+        - ${{ values.domain_prod }}
+        - ${{ values.domain_stage }}
+      secretName: ${{ values.app_name }}-tls
   rules:
-  - host: ${{ values.domain_prod }}
-    http:
-      paths:
-      - path: /
-        pathType: Prefix
-        backend:
-          service:
-            name: ${{ values.app_name }}
-            port:
-              number: 80
-  - host: ${{ values.domain_stage }}
-    http:
-      paths:
-      - path: /
-        pathType: Prefix
-        backend:
-          service:
-            name: ${{ values.app_name }}
-            port:
-              number: 80
+    - host: ${{ values.domain_prod }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: ${{ values.app_name }}
+                port:
+                  number: 80
+    - host: ${{ values.domain_stage }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: ${{ values.app_name }}
+                port:
+                  number: 80

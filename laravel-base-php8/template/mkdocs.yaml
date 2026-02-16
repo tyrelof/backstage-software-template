@@ -1,0 +1,30 @@
+site_name: '${{ values.app_name }}'
+site_description: 'Documentation for ${{ values.app_name }}'
+
+repo_url: 'https://${{ values.gitlab_host }}/${{ values.ownerPath }}/${{ values.app_name }}'
+edit_uri: 'edit/main/docs'
+
+plugins:
+  - techdocs-core
+
+nav:
+  - Overview:
+      - Getting Started: index.md
+
+  - Deployment:
+      - GitLab CI/CD: gitlab-ci.md
+      - Releases: releases.md
+
+  - Runtime & Ops:
+      - Health & Metrics: health-and-metrics.md
+      - Logs (Loki / Grafana): logql-loki-cheatsheet.md
+      - Secrets & Configuration: secrets-and-config.md
+      - Ingress & HSTS: app-ingress-hsts.md
+      - Nginx: nginx.md
+
+  - Application Docs:
+      - Overview: app/README.md
+      - Architecture: app/architecture.md
+      - Domain Logic: app/domain.md
+      - API Notes: app/api.md
+      - Runbook: app/runbook.md

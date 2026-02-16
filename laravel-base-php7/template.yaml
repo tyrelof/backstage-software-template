@@ -2,8 +2,9 @@ apiVersion: scaffolder.backstage.io/v1beta3
 kind: Template
 metadata:
   name: laravel-php7-gitlab
-  title: Laravel service (PHP 7) - GitLab + EKS
-  description: Scaffolds a Laravel (PHP 7) app with Dockerfile + Helm chart for GitLab CI/CD and EKS deployment
+  title: Laravel Legacy Application (PHP 7.3)
+  description: |
+    Legacy Laravel 7 application running on PHP 7.3 (FPM) with Nginx. Supports existing PHP 7.x applications with queue workers, comprehensive monitoring, and automated deployments. Fully integrated with GitLab CI/CD, Docker, Kubernetes, and stage/production environments. Note: PHP 7 reached end-of-life; consider migrating to PHP 8 for new projects.
 spec:
   owner: platform
   type: service
@@ -16,14 +17,21 @@ spec:
           title: Service name
           type: string
           description: |
-            Canonical service identifier
+            Canonical service identifier (lowercase, DNS-friendly)
             
-            Used to name:
-            - GitLab repository
-            - ECR repository
-            - Helm chart
-            - ArgoCD application
-            - Kubernetes namespace
+            Used to name your:
+            - GitLab repository on nexus.nmscreative.com
+            - ECR container repository (AWS Elastic Container Registry)
+            - Kubernetes namespace for deployment
+            - Helm chart and ArgoCD application
+            - Docker image tag and runtime references
+            
+            Rules:
+            - Must start with a lowercase letter
+            - Contain only lowercase letters, numbers, and hyphens
+            - Length must be 3-63 characters
+            
+            Examples: legacy-app, old-portal, php7-service, legacy-api, crm-v1
           pattern: '^[a-z][a-z0-9-]{2,62}$'
 
         ownerPath:

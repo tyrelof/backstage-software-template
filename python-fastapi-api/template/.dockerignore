@@ -1,26 +1,50 @@
-.dockerignore
+# Version control
 .git
 .gitignore
-.gitlab-ci.yml
+.gitattributes
+
+# Python artifacts
 __pycache__
 *.pyc
-.pytest_cache
-.coverage
-htmlcov/
+*.pyo
+*.pyd
+*.so
+*.egg
+*.egg-info/
 dist/
 build/
-*.egg-info
-.venv/
-venv/
+.eggs/
+*.py[cod]
+.Python
 env/
-.env
-.env.local
+venv/
+.venv/
+*.egg-info
+
+# Development dependencies
+.pytest_cache/
+.coverage
+.mypy_cache/
+.ruff_cache/
+.tox/
+
+# Documentation and CI/CD
+*.md
+README*
+CHANGELOG*
+.gitlab-ci.yml
+ci/
+charts/
+docs/
+scripts/
+
+# Development files
 .vscode/
 .idea/
-*.swp
-*.swo
-*~
 .DS_Store
-node_modules/
-mkdocs_template.yaml
-*.md
+.env*
+
+# Cache
+.cache/
+.pytest_cache/
+htmlcov/

@@ -1,14 +1,20 @@
-# Deploy to STAGE: Update values with new image tag and sync with ArgoCD
-cd_stage_deploy:
+# -------------------------
+# RELEASE (STAGE): split into 2 jobs
+#   1) If image changed -> bump values image tag + sync
+#   2) If charts changed -> do NOT bump image tag; just sync chart changes
+# -------------------------
+
+# STAGE deploy when image changed (app/ or Dockerfile)
+cd_stage_image:
   stage: release
-  needs: ["ci_build_image"]
+  resource_group: "deploy-${APP_NAME}-stage"
   tags: ["self-hosted"]
   image: public.ecr.aws/h1y8m9v5/argocd-yq:2.11.7
-  resource_group: "deploy-${APP_NAME}-stage"
+  needs: ["ci_build_image"]
   rules:
     - if: '$CI_COMMIT_BRANCH == "main"'
       changes:
-        - src/**/*
+        - app/**/*
         - Dockerfile
         - requirements.txt
       when: on_success
@@ -35,11 +41,11 @@ cd_stage_deploy:
       exit 1
     fi
 
-    # Update image repository and tag
+    # Bump values to newly built image tag
     yq -i '.image.repository = strenv(IMAGE_REPO)' "$FILE"
     yq -i '.image.tag = strenv(COMMIT_ID)' "$FILE"
 
-    # Commit changes if values changed
+    # Commit values change without triggering another pipeline
     if ! git diff --quiet -- "$FILE"; then
       git add "$FILE"
       git commit -m "chore: image=${IMAGE_REPO}:${COMMIT_ID} (${APP_ENV}) [ci skip]"
@@ -72,22 +78,104 @@ cd_stage_deploy:
         --sync-option CreateNamespace=true
     else
       argocd app set "${ARGO_APP}" \
-        --values "${VALUES_FILE}"
+        --repo "${REPO_URL_CLEAN}" \
+        --path "${CHART_PATH}" \
+        --values "${VALUES_FILE}" \
+        --revision "${CI_COMMIT_REF_NAME}" \
+        --dest-namespace "${DEST_NS}" \
+        --dest-server https://kubernetes.default.svc
     fi
 
-    # Sync application
-    argocd app sync "${ARGO_APP}"
-    argocd app wait "${ARGO_APP}" --health --operation --timeout 600
+    argocd app sync "${ARGO_APP}" --timeout 300
+    argocd app wait "${ARGO_APP}" --resource apps:Deployment:${ARGO_APP} --health --timeout 600
 
-# Deploy to PRODUCTION: Update values with SAME image tag and sync with ArgoCD
-cd_prod_deploy:
+# STAGE deploy when charts changed (chart-only updates) - no image bump
+cd_stage_chart:
   stage: release
-  needs: ["cd_stage_deploy"]
+  resource_group: "deploy-${APP_NAME}-stage"
   tags: ["self-hosted"]
   image: public.ecr.aws/h1y8m9v5/argocd-yq:2.11.7
+  needs: []
+  rules:
+    - changes:
+        - app/**/*
+        - Dockerfile
+        - requirements.txt
+      when: never
+    - if: '$CI_COMMIT_BRANCH == "main"'
+      changes:
+        - charts/**/*
+      when: on_success
+    - when: never
+
+  before_script:
+    - git config --global safe.directory "$CI_PROJECT_DIR"
+    - git config user.name "Platform Bot"
+    - git config user.email "platform-bot@noreply.local"
+    - git remote set-url origin "https://oauth2:${PROJECT_PUSH_TOKEN}@${CI_SERVER_HOST}/${CI_PROJECT_PATH}.git"
+    - git fetch --all
+    - git checkout "$CI_COMMIT_REF_NAME"
+
+  script: |
+    set -euo pipefail
+    export APP_ENV="stage"
+
+    : "${PROJECT_PUSH_TOKEN:?PROJECT_PUSH_TOKEN is empty}"
+    : "${ARGOCD_PASSWORD:?ARGOCD_PASSWORD is empty}"
+
+    # Note: no yq image bump here. We just sync chart changes.
+    argocd login argocd-server.argocd --insecure --grpc-web \
+      --username "${ARGOCD_USERNAME:-admin}" --password "$ARGOCD_PASSWORD"
+
+    REPO_URL_CLEAN="https://${CI_SERVER_HOST}/${CI_PROJECT_PATH}.git"
+    argocd repo add "${REPO_URL_CLEAN}" --username oauth2 --password "${PROJECT_PUSH_TOKEN}" --upsert
+
+    CHART_PATH="charts/${APP_NAME}"
+    VALUES_FILE="values-${APP_ENV}.yaml"
+    ARGO_APP="${APP_NAME}-${APP_ENV}"
+    DEST_NS="${APP_NAME}-${APP_ENV}"
+
+    if ! argocd app get "${ARGO_APP}" >/dev/null 2>&1; then
+      argocd app create "${ARGO_APP}" \
+        --repo "${REPO_URL_CLEAN}" \
+        --path "${CHART_PATH}" \
+        --dest-namespace "${DEST_NS}" \
+        --dest-server https://kubernetes.default.svc \
+        --values "${VALUES_FILE}" \
+        --revision "${CI_COMMIT_REF_NAME}" \
+        --sync-policy manual \
+        --sync-option CreateNamespace=true
+    else
+      argocd app set "${ARGO_APP}" \
+        --repo "${REPO_URL_CLEAN}" \
+        --path "${CHART_PATH}" \
+        --values "${VALUES_FILE}" \
+        --revision "${CI_COMMIT_REF_NAME}" \
+        --dest-namespace "${DEST_NS}" \
+        --dest-server https://kubernetes.default.svc
+    fi
+
+    argocd app sync "${ARGO_APP}" --timeout 300
+    argocd app wait "${ARGO_APP}" --resource apps:Deployment:${ARGO_APP} --health --timeout 600
+
+# -------------------------
+# RELEASE (PROD): split into 2 jobs + manual
+#   - Only shows after corresponding stage job finished (needs)
+# -------------------------
+
+# PROD manual deploy when image changed
+cd_prod_image:
+  stage: release
   resource_group: "deploy-${APP_NAME}-prod"
+  tags: ["self-hosted"]
+  image: public.ecr.aws/h1y8m9v5/argocd-yq:2.11.7
+  needs: ["ci_build_image"]
   rules:
     - if: '$CI_COMMIT_BRANCH == "main"'
+      changes:
+        - app/**/*
+        - Dockerfile
+        - requirements.txt
       when: manual
     - when: never
 
@@ -112,11 +200,9 @@ cd_prod_deploy:
       exit 1
     fi
 
-    # Update image repository and tag (SAME image from staging)
     yq -i '.image.repository = strenv(IMAGE_REPO)' "$FILE"
     yq -i '.image.tag = strenv(COMMIT_ID)' "$FILE"
 
-    # Commit changes if values changed
     if ! git diff --quiet -- "$FILE"; then
       git add "$FILE"
       git commit -m "chore: image=${IMAGE_REPO}:${COMMIT_ID} (${APP_ENV}) [ci skip]"
@@ -125,7 +211,6 @@ cd_prod_deploy:
       echo "No values change"
     fi
 
-    # ArgoCD sync
     argocd login argocd-server.argocd --insecure --grpc-web \
       --username "${ARGOCD_USERNAME:-admin}" --password "$ARGOCD_PASSWORD"
 
@@ -149,9 +234,82 @@ cd_prod_deploy:
         --sync-option CreateNamespace=true
     else
       argocd app set "${ARGO_APP}" \
-        --values "${VALUES_FILE}"
+        --repo "${REPO_URL_CLEAN}" \
+        --path "${CHART_PATH}" \
+        --values "${VALUES_FILE}" \
+        --revision "${CI_COMMIT_REF_NAME}" \
+        --dest-namespace "${DEST_NS}" \
+        --dest-server https://kubernetes.default.svc
     fi
 
-    # Sync application
-    argocd app sync "${ARGO_APP}"
-    argocd app wait "${ARGO_APP}" --health --operation --timeout 600
+    argocd app sync "${ARGO_APP}" --timeout 300
+    argocd app wait "${ARGO_APP}" --resource apps:Deployment:${ARGO_APP} --health --timeout 600
+
+# PROD manual deploy when chart-only changed (no image bump)
+cd_prod_chart:
+  stage: release
+  resource_group: "deploy-${APP_NAME}-prod"
+  tags: ["self-hosted"]
+  image: public.ecr.aws/h1y8m9v5/argocd-yq:2.11.7
+  needs: ["cd_stage_chart"]
+  rules:
+    - changes:
+        - app/**/*
+        - Dockerfile
+        - requirements.txt
+      when: never
+    - if: '$CI_COMMIT_BRANCH == "main"'
+      changes:
+        - charts/**/*
+      when: manual
+    - when: never
+
+  before_script:
+    - git config --global safe.directory "$CI_PROJECT_DIR"
+    - git config user.name "Platform Bot"
+    - git config user.email "platform-bot@noreply.local"
+    - git remote set-url origin "https://oauth2:${PROJECT_PUSH_TOKEN}@${CI_SERVER_HOST}/${CI_PROJECT_PATH}.git"
+    - git fetch --all
+    - git checkout "$CI_COMMIT_REF_NAME"
+
+  script: |
+    set -euo pipefail
+    export APP_ENV="prod"
+
+    : "${PROJECT_PUSH_TOKEN:?PROJECT_PUSH_TOKEN is empty}"
+    : "${ARGOCD_PASSWORD:?ARGOCD_PASSWORD is empty}"
+
+    # No image bump; just sync chart changes.
+    argocd login argocd-server.argocd --insecure --grpc-web \
+      --username "${ARGOCD_USERNAME:-admin}" --password "$ARGOCD_PASSWORD"
+
+    REPO_URL_CLEAN="https://${CI_SERVER_HOST}/${CI_PROJECT_PATH}.git"
+    argocd repo add "${REPO_URL_CLEAN}" --username oauth2 --password "${PROJECT_PUSH_TOKEN}" --upsert
+
+    CHART_PATH="charts/${APP_NAME}"
+    VALUES_FILE="values-${APP_ENV}.yaml"
+    ARGO_APP="${APP_NAME}-${APP_ENV}"
+    DEST_NS="${APP_NAME}-${APP_ENV}"
+
+    if ! argocd app get "${ARGO_APP}" >/dev/null 2>&1; then
+      argocd app create "${ARGO_APP}" \
+        --repo "${REPO_URL_CLEAN}" \
+        --path "${CHART_PATH}" \
+        --dest-namespace "${DEST_NS}" \
+        --dest-server https://kubernetes.default.svc \
+        --values "${VALUES_FILE}" \
+        --revision "${CI_COMMIT_REF_NAME}" \
+        --sync-policy manual \
+        --sync-option CreateNamespace=true
+    else
+      argocd app set "${ARGO_APP}" \
+        --repo "${REPO_URL_CLEAN}" \
+        --path "${CHART_PATH}" \
+        --values "${VALUES_FILE}" \
+        --revision "${CI_COMMIT_REF_NAME}" \
+        --dest-namespace "${DEST_NS}" \
+        --dest-server https://kubernetes.default.svc
+    fi
+
+    argocd app sync "${ARGO_APP}" --timeout 300
+    argocd app wait "${ARGO_APP}" --resource apps:Deployment:${ARGO_APP} --health --timeout 600

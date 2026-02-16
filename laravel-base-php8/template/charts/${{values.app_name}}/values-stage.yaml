@@ -1,0 +1,125 @@
+# ============================================================
+# STAGE ENVIRONMENT VALUES
+#
+# Ownership:
+# - Platform controls platform.*
+# - App teams control config.*
+# ============================================================
+
+# ------------------------------------------------------------
+# Identity
+# ------------------------------------------------------------
+serviceName: ${{ values.app_name }}
+
+# ------------------------------------------------------------
+# Platform context
+# ------------------------------------------------------------
+platform:
+  context:
+    system: ${{ values.system }}
+    env: stage
+
+  secrets:
+    bootstrap:
+      enabled: true
+      APP_KEY: ""
+
+# ------------------------------------------------------------
+# Application configuration (NON-SECRET)
+# ------------------------------------------------------------
+config:
+  APP_NAME: ""
+  APP_ENV: "stage"
+  APP_DEBUG: "true"
+  APP_URL: ""
+
+  LOG_CHANNEL: "stderr"
+  LOG_LEVEL: "debug"
+
+  DB_CONNECTION: "mysql"
+  DB_HOST: ""
+  DB_PORT: "3306"
+  DB_DATABASE: ""
+  DB_USERNAME: ""
+
+  CACHE_STORE: "file"
+  REDIS_HOST: ""
+  REDIS_PORT: "6379"
+
+  QUEUE_CONNECTION: "sync"
+  SESSION_DRIVER: "file"
+
+  VITE_APP_NAME: ""
+  VITE_APP_URL: ""
+
+# ------------------------------------------------------------
+# Runtime
+# ------------------------------------------------------------
+replicaCount: 1
+
+image:
+  repository: ${{ values.image_repository }}
+  tag: ${{ values.image_tag }}
+
+podLabels:
+  platform.io/app: ${{ values.app_name }}
+  platform.io/env: stage
+  platform.io/system: ${{ values.system }}
+
+service:
+  port: ${{ values.service_port }}
+
+ingress:
+  className: nginx
+  annotations:
+    cert-manager.io/cluster-issuer: le-prod   # intentional
+    nginx.ingress.kubernetes.io/hsts: "false"
+  hosts:
+    - host: ${{ values.domain_stage }}
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - secretName: ${{ values.app_name }}-tls
+      hosts:
+        - ${{ values.domain_stage }}
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 256Mi
+  limits:
+    cpu: 1000m
+    memory: 2Gi
+
+# ============================================================
+# OPTIONAL APPLICATION WORKLOADS
+#
+# These define additional runtime processes for the application.
+#
+# IMPORTANT:
+# - All workloads are DISABLED by default
+# - Enable only if your application actually uses them
+# - Each enabled block creates its own Deployment
+#
+# Ownership:
+# - Application team
+# ============================================================
+workers:
+  - name: emails
+    enabled: false
+    replicas: 1
+    command: ["/entrypoint.sh", "php", "artisan", "queue:work", "--queue=emails"]
+    podLabels:
+      platform.io/app: ${{ values.app_name }}
+      platform.io/env: stage
+      platform.io/system: ${{ values.system }}
+
+  - name: notifications
+    enabled: false
+    replicas: 1
+    command: ["/entrypoint.sh", "php", "artisan", "queue:work", "--queue=notifications"]
+    podLabels:
+      platform.io/app: ${{ values.app_name }}
+      platform.io/env: stage
+      platform.io/system: ${{ values.system }}

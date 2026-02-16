@@ -2,8 +2,9 @@ apiVersion: scaffolder.backstage.io/v1beta3
 kind: Template
 metadata:
   name: fastapi-service
-  title: FastAPI Service (GitLab + EKS)
-  description: Scaffolds a FastAPI app with Dockerfile for EKS
+  title: FastAPI REST API Service
+  description: |
+    Production-ready FastAPI REST API with Python 3.11, Docker, Kubernetes, and automated CI/CD. Includes health endpoints, async support, security hardening, Trivy scanning, and Helm charts for stage/production deployment.
 spec:
   owner: platform
   type: service
@@ -16,12 +17,20 @@ spec:
           title: Service name
           type: string
           description: |
-            Canonical service identifier
+            Canonical service identifier (lowercase, DNS-friendly)
             
-            Used to name:
-            - GitLab repository
-            - ECR repository
-            - Kubernetes namespace
+            Used to name your:
+            - GitLab repository on nexus.nmscreative.com
+            - ECR container repository (AWS Elastic Container Registry)
+            - Kubernetes namespace for deployment
+            - Docker image tag and runtime references
+            
+            Rules:
+            - Must start with a lowercase letter
+            - Contain only lowercase letters, numbers, and hyphens
+            - Length must be 3-62 characters
+            
+            Examples: my-api, user-service, payment-api, auth-gateway, notification-hub
           pattern: '^[a-z][a-z0-9-]{2,62}$'
    
         ownerPath:

@@ -1,231 +1,455 @@
 # GitLab CI/CD Pipeline
 
-The GitLab CI/CD pipeline automates platform prerequisites, testing, building, and deployment of the FastAPI service using ArgoCD for GitOps-based deployments.
+## Overview
 
-## Pipeline Stages
+The pipeline automates continuous integration and deployment:
 
-### 1. Prep (Stage: 30-prep.yml)
-- **platform_prereqs**: Creates AWS ECR repository if it doesn't exist
-  - Enables image scanning on push for security
-  - Self-service: developers don't need to manually create repos
-- **platform_ssm_placeholders**: Creates AWS SSM parameters for secrets
-  - Creates `/${SYSTEM}/${APP_NAME}/stage/app` - staging secrets placeholder
-  - Creates `/${SYSTEM}/${APP_NAME}/prod/app` - production secrets placeholder
-  - Uses SecureString type for encrypted storage
-  - Allows operators to populate secrets via AWS SSM console or CLI
+1. **Lint** - Validate code, YAML, Helm charts (non-blocking)
+2. **Test** - Run unit tests (non-blocking)
+3. **Docs** - Generate TechDocs artifacts (non-blocking)
+4. **Prep** - Create ECR repository and AWS infrastructure
+5. **Build** - Create Docker image, push to ECR, security scan
+6. **Release** - Auto-deploy to stage, manual approval for prod
+7. **Ops** - Manual restart buttons for environments
 
-### 2. Lint (Stage: 10-lint.yml)
-- Code quality checks using **ruff**
-- Code formatting verification with **black**
-- Import sorting with **isort**
-- Allows failure to not block pipeline
+---
 
-### 3. Test (Stage: 20-tests.yml)
-- Unit tests using **pytest**
-- Code coverage reporting
-- Coverage artifacts stored for analysis
-- Allows failure but provides metrics
+## 🔄 Pipeline Stages
 
-### 4. Build (Stage: 30-build.yml) - `ci_build_image`
-- Docker image build (runs once per commit) using BuildKit
-- Depends on: `platform_prereqs`, `platform_ssm_placeholders` (ensures ECR repo exists)
-- Pushes to AWS ECR with tag `$COMMIT_ID` (short SHA)
-- Tags as `latest` for quick reference
-- **Key**: Image is built once and reused for all environments
+### 1. Lint
 
-### 5. Release (Stage: 40-release.yml) - `cd_stage_deploy`
-- **Automatic** deployment to staging (only if src/, Dockerfile, or requirements.txt changed)
-- Updates `charts/${APP_NAME}/values-stage.yaml` with new image tag
-- Registers/updates ArgoCD application for staging
-- Syncs application with ArgoCD
-- **Same image** from build stage is deployed
-
-### 6. Operations (Stage: 50-ops.yml)
-- **Production deployment** (`cd_prod_deploy`) - **Manual approval required**
-  - Triggered after staging deployment succeeds
-  - Updates `charts/values-prod.yaml` with **same image tag** as staging
-  - Deploys to production via ArgoCD
-  - Requires manual trigger in GitLab UI
-- **Manual operations** available:
-  - `ops_restart_stage` - Restart staging deployment
-  - `ops_restart_prod` - Restart production deployment (requires confirmation)
-
-## Deployment Workflow
-
-```
-Commit to main
-    ↓
-Prep (ECR repo + SSM placeholders)
-    ↓
-Lint → Test → Build image (once via BuildKit)
-                ↓
-            Staging deployment (automatic if code changed)
-                ↓
-            Production deployment (manual, same image)
-                ↓
-            Operations (restart buttons)
-```
-
-### Key Benefits
-
-1. **Self-Service Platform**: ECR repo and SSM parameters auto-created on first deploy
-2. **Single Build**: Image built once via BuildKit and promoted through environments
-3. **Same Code**: Staging and production run identical image (only config differs)
-4. **ArgoCD Integration**: GitOps-based deployment with version control
-5. **Manual Promotion**: Production requires explicit approval (manual trigger)
-6. **Staged Testing**: Changes tested in staging before production
-7. **Fast Rollback**: Easy rollback via ArgoCD if issues arise
-8. **Encrypted Secrets**: SSM SecureString storage for app configuration
-
-## Environment Variables
-
-Required CI/CD variables in GitLab:
-
-```
-AWS_ACCOUNT_ID          # Your AWS account ID
-AWS_REGION              # AWS region (e.g., us-east-2)
-AWS_ECR_REGISTRY        # ECR registry (e.g., 123456789.dkr.ecr.us-east-2.amazonaws.com)
-SYSTEM                  # System name for SSM paths (e.g., popapps)
-CI_REGISTRY_USER        # GitLab registry username (for caching)
-CI_REGISTRY_PASSWORD    # GitLab registry password (for caching)
-PROJECT_PUSH_TOKEN      # GitLab push token for Git operations
-ARGOCD_USERNAME         # ArgoCD username (default: admin)
-ARGOCD_PASSWORD         # ArgoCD password
-```
-
-## SSM Secrets Structure
-
-The pipeline creates SSM parameters in this structure:
-
-```
-/${SYSTEM}/${APP_NAME}/stage/app   → Staging app secrets (JSON)
-/${SYSTEM}/${APP_NAME}/prod/app    → Production app secrets (JSON)
-```
-
-**Example**: Populate via AWS CLI:
+Validates code quality and configuration (non-blocking):
 
 ```bash
+# Ruff - Python linter (fast, Rust-based)
+ruff check .
+✅ or ⚠️ Warning (doesn't fail pipeline)
+
+# Ruff Format - Code formatting
+ruff format .
+✅ or ⚠️ Warning (doesn't fail pipeline)
+
+# Helm Lint - Kubernetes manifests
+helm lint charts/
+✅ or ⚠️ Warning (doesn't fail pipeline)
+
+# YAML Lint - CI/CD manifests
+yamllint .
+✅ or ⚠️ Warning (doesn't fail pipeline)
+
+# pip audit - Dependency vulnerabilities (Python)
+pip audit
+⚠️ Informational (doesn't fail pipeline)
+```
+
+**Fix issues locally**:
+```bash
+make lint        # Run locally before commit
+ruff check --fix # Fix issues automatically
+ruff format .    # Format code
+pip audit        # Check dependencies
+```
+
+---
+
+### 2. Test
+
+Runs unit tests via pytest (non-blocking):
+
+```bash
+pytest tests/ -v --cov=app
+```
+
+**If tests fail**: Pipeline continues (non-blocking), but fix before production.
+
+---
+
+### 3. Docs
+
+Generates TechDocs artifacts for Backstage (non-blocking):
+
+```bash
+# Builds documentation from docs/ folder
+# Publishes to S3 for Backstage TechDocs
+```
+
+---
+
+### 4. Prep
+
+Prepares infrastructure prerequisites:
+
+- **Creates ECR repository** if doesn't exist
+- **Creates AWS SSM paths**:
+  - `/${{ values.system }}/${{ values.app_name }}/stage/app`
+  - `/${{ values.system }}/${{ values.app_name }}/prod/app`
+- Validates AWS credentials and permissions
+
+```bash
+# Example: SSM paths created as SecureString parameters
 aws ssm put-parameter \
-  --name "/popapps/myapp/stage/app" \
+  --name "/platform/my-app/stage/app" \
   --type "SecureString" \
-  --value '{"DB_PASSWORD":"secret123"}' \
+  --value "{}" \
+  --overwrite
+
+aws ssm put-parameter \
+  --name "/platform/my-app/prod/app" \
+  --type "SecureString" \
+  --value "{}" \
   --overwrite
 ```
 
-## Pipeline Configuration
+---
 
-Main pipeline file: `.gitlab-ci.yml`
+### 5. Build
 
-Includes modular CI files:
-- `ci/00-base.yml` - Base variables and caching
-- `ci/10-lint.yml` - Code quality checks
-- `ci/20-tests.yml` - Unit testing
-- `ci/30-prep.yml` - Platform prerequisites (ECR repo, SSM placeholders)
-- `ci/30-build.yml` - Docker build via BuildKit and push to ECR
-- `ci/40-release.yml` - Stage deployment via ArgoCD
-- `ci/50-ops.yml` - Production deployment and manual operations
-
-## How It Works
-
-### Build Stage
-
-```yaml
-ci_build_image:
-  script:
-    - docker build -t $IMAGE_REPO:$COMMIT_ID .
-    - docker push $IMAGE_REPO:$COMMIT_ID
-```
-
-Image is tagged with commit SHA and pushed to AWS ECR.
-
-### Staging Deployment
-
-```yaml
-cd_stage_deploy:
-  script:
-    # Update staging values with new image tag
-    yq -i '.image.tag = strenv(COMMIT_ID)' "charts/${APP_NAME}/values-stage.yaml"
-    
-    # Commit updated values
-    git commit -m "chore: image=...:${COMMIT_ID} (stage)"
-    git push origin main
-    
-    # Create/update ArgoCD application
-    argocd app create|set "${APP_NAME}-stage" ...
-    
-    # Sync with ArgoCD
-    argocd app sync "${APP_NAME}-stage" --wait
-```
-
-### Production Deployment
-
-```yaml
-cd_prod_deploy:
-  when: manual  # Requires manual approval in GitLab UI
-  script:
-    # Update production values with SAME image tag
-    yq -i '.image.tag = strenv(COMMIT_ID)' "charts/${APP_NAME}/values-prod.yaml"
-    
-    # Same workflow as staging
-    # ArgoCD creates/updates and syncs prod application
-```
-
-## Manual Approval Process
-
-### Promoting to Production
-
-1. Go to GitLab project → **CI/CD** → **Pipelines**
-2. Find the pipeline for your commit (should show staging is deployed)
-3. Scroll down to **Operations** section
-4. Click **Play** button on `cd_prod_deploy` job
-5. Confirm deployment
-
-### After Deployment
-
-ArgoCD will automatically sync the application. Monitor:
+Creates Docker image and pushes to ECR:
 
 ```bash
-# Check ArgoCD sync status
-argocd app get ${APP_NAME}-prod
+# Build multi-stage Docker image
+docker build -t my-app:latest .
 
-# Check Kubernetes deployment
-kubectl rollout status deployment/${APP_NAME} -n ${APP_NAME}-prod
+# Tag with git commit SHA (immutable identifier)
+docker tag my-app:latest \
+  123456789.dkr.ecr.us-east-2.amazonaws.com/my-app:abc123def456
 
-# View logs
-kubectl logs -f -l app=${APP_NAME} -n ${APP_NAME}-prod
+# Tag with "latest"
+docker tag my-app:latest \
+  123456789.dkr.ecr.us-east-2.amazonaws.com/my-app:latest
+
+# Push both tags to ECR
+docker push 123456789.dkr.ecr.us-east-2.amazonaws.com/my-app:abc123def456
+docker push 123456789.dkr.ecr.us-east-2.amazonaws.com/my-app:latest
 ```
 
-## Image Promotion Example
+**Image tags**:
+- `abc123def456` - Git commit SHA (unique, immutable reference)
+- `latest` - Pointer to current main branch build
 
-**Scenario**: Fix a bug, test in staging, promote to production
+**Security Scanning (integrated in build)**:
 
-1. **Push code** to main branch
-2. **Pipeline runs**:
-   - Lint and test pass ✓
-   - Docker image built: `123456.dkr.ecr.us-east-2.amazonaws.com/my-app:abc1234` ✓
-   - Staging values updated → deployment automatic ✓
-3. **Test in staging**: `https://my-app.stage.popapps.ai`
-4. **Manual approval**: Click play on `cd_prod_deploy` in GitLab
-5. **Production deploys**: Same `abc1234` image with production config
+```bash
+# Trivy scans for CVEs and misconfigurations
+trivy image 123456789.dkr.ecr.us-east-2.amazonaws.com/my-app:abc123def456
 
-## Troubleshooting
+# Generate SBOM (Software Bill of Materials)
+trivy sbom 123456789.dkr.ecr.us-east-2.amazonaws.com/my-app:abc123def456 \
+  --format json > sbom.json
+```
 
-### Build Failed
-- Check Docker build logs in GitLab CI/CD
-- Verify base image availability
-- Check dependency installation: `pip install -r requirements.txt`
+**Results**:
+- 🟢 **Green**: No critical vulnerabilities
+- 🟡 **Yellow**: Medium/low severity (non-blocking)
+- 🔴 **Red**: Critical vulnerabilities (may prevent prod)
 
-### Staging Deployment Failed
-- Check ArgoCD credentials: `ARGOCD_PASSWORD`
-- Verify git credentials: `PROJECT_PUSH_TOKEN`
-- Check if ArgoCD can access repository
+---
 
-### Production Deployment Not Showing
-- Staging deployment must succeed first
-- Production job only appears after `cd_stage_deploy` completes
-- Click **Play** button to manually trigger
+### 6. Release
 
-### Same Image in Both Environments
-- This is by design! Only config differs between environments
-- Different resource limits, replicas, etc. in values-stage.yaml vs values-prod.yaml
-- Same code/image ensures consistency
+Deploys to staging automatically, production requires approval:
+
+#### Automatic to Staging
+
+```bash
+# 1. Image tag set in values-stage.yaml via yq
+yq eval ".image.tag = \"abc123def456\"" \
+  -i charts/my-app/values-stage.yaml
+
+# 2. Commit to git
+git add charts/my-app/values-stage.yaml
+git commit -m "chore: bump image to abc123def456"
+git push origin main
+
+# 3. ArgoCD detects change and syncs automatically
+argocd app sync my-app-stage --wait
+```
+
+**Namespace**: `${{ values.app_name }}-stage` (e.g., `my-app-stage`)  
+**ArgoCD app**: `my-app-stage`
+
+#### Manual to Production
+
+```bash
+# 1. Click ▶️ Play button in GitLab UI
+# 2. Same process as staging:
+yq eval ".image.tag = \"abc123def456\"" \
+  -i charts/my-app/values-prod.yaml
+
+# 3. Commit and push
+git add charts/my-app/values-prod.yaml
+git commit -m "chore: bump prod image to abc123def456"
+git push origin main
+
+# 4. ArgoCD app syncs
+argocd app sync my-app-prod --wait
+```
+
+**Namespace**: `${{ values.app_name }}-prod` (e.g., `my-app-prod`)  
+**ArgoCD app**: `my-app-prod`
+
+---
+
+## ✅ Deployment Checklist
+
+**Before production deployment**:
+
+- [ ] All lint checks passed (or at least acknowledged)
+- [ ] Tests passing or deliberately skipped
+- [ ] Docker image built and scanned for CVEs
+- [ ] Image pushed to ECR successfully
+- [ ] Staging deployment is stable and healthy
+- [ ] Health checks passing (`/health` returns 200)
+- [ ] Recent logs show no errors
+- [ ] Team approval obtained (if required)
+
+**Production approval criteria**:
+
+- ✅ Staging deployed successfully for 15+ minutes
+- ✅ Health checks passing in staging
+- ✅ Logs showing normal operation
+- ✅ No recent error spikes
+- ✅ Team available for quick rollback if needed
+
+---
+
+## 🎮 Manual Operations (Ops Stage)
+
+Manual restart buttons available after successful deploy:
+
+```bash
+# Restart staging deployment
+kubectl -n ${{ values.app_name }}-stage rollout restart deployment/${{ values.app_name }}
+
+# Restart production deployment (requires approval)
+kubectl -n ${{ values.app_name }}-prod rollout restart deployment/${{ values.app_name }}
+```
+
+Use cases:
+- Restart after secrets updated in SSM
+- Force pods to pick up new config
+- Recover from temporary database connection issues
+
+---
+
+## 🔍 Pipeline Permissions & Access
+
+| Role | Lint | Test | Build | Deploy Stage | Deploy Prod | Restart |
+|------|------|------|-------|--------------|------------|---------|
+| **Developer** | ✅ | ✅ | ✅ | 🔄 Auto | ❌ Manual | ✅ Stage only |
+| **Tech Lead** | ✅ | ✅ | ✅ | 🔄 Auto | ✅ Approve | ✅ All |
+| **DevOps** | ✅ | ✅ | ✅ | 🔄 Auto | ✅ Approve | ✅ All |
+
+**Auto-deploy to stage**: Anyone can merge to `main`. Deployment happens automatically.  
+**Manual deploy to prod**: Only approved roles can trigger production deployment.
+
+---
+
+## 📊 Common Deployment Patterns
+
+### Pattern 1: Regular Feature Release
+
+```
+1. Developer creates feature branch from main
+2. Pushes commits → Pipeline runs lint/test
+3. Creates merge request
+4. Approvers review code
+5. Merges to main → Builds image, auto-deploys to stage
+6. Tests in stage environment
+7. Clicks deploy button → Prod deployment (requires approval)
+8. ArgoCD deploys to prod namespace
+```
+
+### Pattern 2: Hotfix to Production
+
+```
+1. Create hotfix branch from main
+2. Fix the issue
+3. Merge to main → Auto-deploys to stage
+4. Quick validation in stage
+5. Deploy to prod immediately (approval required)
+6. Monitor prod deployment
+```
+
+### Pattern 3: Configuration Change Only (No Code)
+
+```
+1. Edit Helm values (e.g., LOG_LEVEL)
+2. Commit values-stage.yaml
+3. Push to main
+4. ArgoCD auto-updates (Helm change triggers Prep stage)
+5. No Docker build needed (reuses existing image)
+```
+
+---
+
+## 🔧 CI/CD Configuration
+
+### GitLab CI (`.gitlab-ci.yml`)
+
+Includes all stage definitions from `ci/` folder:
+
+```yaml
+include:
+  - local: 'ci/00-base.yml'
+  - local: 'ci/10-lint.yml'
+  - local: 'ci/20-test.yml'
+  - local: 'ci/25-docs.yml'
+  - local: 'ci/30-prep.yml'
+  - local: 'ci/40-build.yml'
+  - local: 'ci/50-release.yml'
+  - local: 'ci/60-ops.yml'
+```
+
+### Helm Values (Environment-Specific)
+
+**values-stage.yaml**:
+```yaml
+config:
+  APP_ENV: "stage"
+  LOG_LEVEL: "debug"
+
+replicaCount: 1
+refreshInterval: 5m
+```
+
+**values-prod.yaml**:
+```yaml
+config:
+  APP_ENV: "production"
+  LOG_LEVEL: "info"
+
+replicaCount: 3
+refreshInterval: 1h
+deletionPolicy: "Retain"
+```
+
+---
+
+## 🚨 Troubleshooting
+
+### Pipeline Fails at Prep Stage
+
+ECR or SSM creation failed:
+
+```bash
+# Check AWS credentials
+aws sts get-caller-identity
+
+# Verify IAM permissions
+aws iam get-role-policy --role-name ci-runner-role --policy-name AllowECR
+
+# Manual ECR creation
+aws ecr create-repository \
+  --repository-name my-app \
+  --region us-east-2
+
+# Manual SSM creation
+aws ssm put-parameter \
+  --name "/platform/my-app/stage/app" \
+  --type SecureString \
+  --value '{}' \
+  --region us-east-2
+```
+
+### Pipeline Fails at Build/Push
+
+Docker or ECR authentication issue:
+
+```bash
+# Verify ECR login
+aws ecr get-login-password | \
+  docker login --username AWS --password-stdin 123456789.dkr.ecr.us-east-2.amazonaws.com
+
+# Check image build locally
+docker build -t my-app:test .
+
+# Verify Dockerfile is correct
+cat Dockerfile | head -20
+```
+
+### Deployment Stuck in Release Stage
+
+ArgoCD not syncing:
+
+```bash
+# Check ArgoCD app status
+argocd app get my-app-stage
+
+# Force ArgoCD refresh
+argocd app sync my-app-stage --force
+
+# Check if namespace exists
+kubectl get namespace my-app-stage
+```
+
+### Pods Not Starting After Deploy
+
+Check deployment logs:
+
+```bash
+# View pod status
+kubectl -n ${{ values.app_name }}-stage get pods
+
+# View pod events
+kubectl -n ${{ values.app_name }}-stage describe pod <pod-name>
+
+# View application logs
+kubectl -n ${{ values.app_name }}-stage logs deployment/${{ values.app_name }}
+
+# Check if secrets loaded
+kubectl -n ${{ values.app_name }}-stage exec <pod-name> -- env | grep DB_
+```
+
+---
+
+## 📈 Pipeline Performance
+
+### Typical Execution Times
+
+| Stage | Duration | Notes |
+|-------|----------|-------|
+| **Lint** | 1-2 min | ESLint, Helm lint, YAML |
+| **Test** | 2-5 min | Jest unit tests |
+| **Docs** | 1-2 min | MkDocs build |
+| **Prep** | 1-2 min | ECR/SSM verification |
+| **Build** | 5-10 min | Docker build, push, scan |
+| **Release** | 2-3 min | Helm update, Git commit |
+| **Total** | **12-25 min** | Full pipeline time |
+
+### Optimization Tips
+
+```bash
+# Use Docker layer caching
+# - Multi-stage builds (dev, prod)
+# - Optimal layer ordering (dependencies first)
+
+# Parallelize jobs where possible
+# - Lint and test can run simultaneously
+# - Multiple workers for concurrent builds
+
+# Cache dependencies
+# - pip packages cached between builds
+# - Docker image layers cached
+```
+
+---
+
+## 📚 Reference
+
+| Variable | Value | Used In |
+|----------|-------|---------|
+| `CI_COMMIT_SHA` | `abc123def456` | Image tag, logs |
+| `CI_PROJECT_PATH_SLUG` | `project-name` | ECR repo name |
+| `CI_ENVIRONMENT_NAME` | `production` | Deployment target |
+| `DEST_NS` | `my-app-prod` | Kubernetes namespace |
+| `ARGO_APP` | `my-app-prod` | ArgoCD app name |
+
+---
+
+## 🔗 Related
+
+- See [deployment.md](deployment.md) for manual Helm commands
+- See [kubernetes.md](kubernetes.md) for kubectl debugging
+- See [secrets.md](secrets.md) for SSM parameter management
+

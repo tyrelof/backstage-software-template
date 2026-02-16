@@ -1,0 +1,149 @@
+apiVersion: scaffolder.backstage.io/v1beta3
+kind: Template
+metadata:
+  name: laravel-base-php8
+  title: Laravel Base Application (PHP 8.2)
+  description: |
+    Modern Laravel 12 application running on PHP 8.2 (FPM) with Nginx. Includes optional queue workers, comprehensive monitoring, and automated deployments. Fully integrated with GitLab CI/CD, Docker, Kubernetes, and stage/production environments. Ideal for new Laravel projects requiring modern PHP features.
+  tags:
+    - php
+    - laravel
+    - web
+spec:
+  owner: user:guest
+  type: service
+
+  parameters:
+    - title: Service info
+      required: [component_id, ownerPath, gitlabHost, baseDomain, servicePort, awsAccountId, awsRegion]
+      properties:
+        component_id:
+          title: Service name
+          type: string
+          description: |
+            Canonical service identifier (lowercase, DNS-friendly)
+            
+            Used to name your:
+            - GitLab repository on nexus.nmscreative.com
+            - ECR container repository (AWS Elastic Container Registry)
+            - Kubernetes namespace for deployment
+            - Helm chart and ArgoCD application
+            - Docker image tag and runtime references
+            
+            Rules:
+            - Must start with a lowercase letter
+            - Contain only lowercase letters, numbers, and hyphens
+            - Length must be 3-63 characters
+            
+            Examples: my-api, user-service, order-api, payment-gateway, notification-service
+          pattern: '^[a-z][a-z0-9-]{2,62}$'
+
+        ownerPath:
+          title: GitLab namespace (repo location)
+          description: |
+            GitLab group or subgroup where the repository will be created.
+            Changing this affects the repo URL and may fail if the namespace does not exist.
+          type: string
+          default: creative-projects
+
+        gitlabHost:
+          title: GitLab Host
+          type: string
+          default: nexus.nmscreative.com
+
+        owner:
+          title: Service owner (Backstage)
+          type: string
+          description: Backstage owner entity (e.g. group:development or group:platform)
+          default: group:development
+
+        system:
+          title: Product / System Domain
+          type: string
+          description: |
+            Product or application domain for catalog grouping in Backstage.
+            Examples: popapps, agentix, opera, moderation, loop, livechat.
+            (Used for catalog grouping only; does not affect infrastructure.)
+          enum:
+            - popapps
+            - agentix
+          default: popapps
+
+        baseDomain:
+          title: Base domain
+          type: string
+          description: |
+            Primary DNS zone used to generate service hostnames
+            (e.g. <service>.popapps.ai, <service>.stage.popapps.ai).
+          enum:
+            - popapps.ai
+            - nmscreative.com
+          default: popapps.ai
+
+        servicePort:
+          title: Service port inside the container
+          type: integer
+          default: 80
+
+        awsAccountId:
+          title: AWS Account ID
+          type: string
+          default: "567540846696"
+
+        awsRegion:
+          title: AWS Region
+          type: string
+          default: "us-east-2"
+        
+  steps:
+    - id: fetch-base
+      name: Fetch base template
+      action: fetch:template
+      input:
+        url: ./template
+        values:
+          app_name: ${{ parameters.component_id | lower }}
+
+          base_domain: ${{ parameters.baseDomain }}
+          owner_path: ${{ parameters.ownerPath | lower }}
+
+          domain_prod:  ${{ parameters.component_id | lower }}.${{ parameters.baseDomain }}
+          domain_stage: ${{ parameters.component_id | lower }}.stage.${{ parameters.baseDomain }}
+
+          # Backstage info
+          owner: ${{ parameters.owner }}
+          system: ${{ parameters.system }}
+
+          # GitLab info
+          gitlab_host: ${{ parameters.gitlabHost }}
+          gitlab_owner: ${{ parameters.ownerPath | lower }}
+          gitlab_project_slug: ${{ parameters.ownerPath | lower }}/${{ parameters.component_id | lower }}
+
+          # Helm values
+          image_repository: ${{ parameters.awsAccountId }}.dkr.ecr.${{ parameters.awsRegion }}.amazonaws.com/${{ parameters.component_id | lower }}
+          image_tag: latest
+          service_port: ${{ parameters.servicePort }}
+
+    - id: publish
+      name: Publish to GitLab
+      action: publish:gitlab
+      input:
+        repoUrl: ${{ parameters.gitlabHost }}?owner=${{ parameters.ownerPath | lower }}&repo=${{ parameters.component_id | lower }}
+        repoVisibility: private
+        defaultBranch: main
+        settings:
+          description: "Service: ${{ parameters.component_id }}"
+
+    - id: register
+      name: Register in Backstage catalog
+      action: catalog:register
+      input:
+        repoContentsUrl: ${{ steps['publish'].output.repoContentsUrl }}
+        catalogInfoPath: /catalog-info.yaml
+
+  output:
+    links:
+      - title: Repository
+        url: ${{ steps['publish'].output.remoteUrl }}
+      - title: Open in catalog
+        url: ${{ steps['register'].output.entityRef | parseEntityRef | entityUrl }}

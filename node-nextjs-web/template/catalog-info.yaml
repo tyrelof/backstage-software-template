@@ -2,7 +2,12 @@ apiVersion: backstage.io/v1alpha1
 kind: Component
 metadata:
   name: ${{ values.app_name }}
-  description: Next.js application
+  description: Modern Next.js web application template
+  tags:
+    - nextjs
+    - react
+    - web
+    - frontend
   annotations:
     gitlab.com/project-slug: ${{ values.gitlab_project_slug }}
     backstage.io/techdocs-ref: dir:.
@@ -16,6 +21,15 @@ metadata:
     - url: https://${{ values.app_name }}.stage.${{ values.base_domain }}
       title: Staging
       icon: cloud
+
+    # ───── Health ─────
+    - url: https://${{ values.app_name }}.${{ values.base_domain }}/health
+      title: Health Check – Prod
+      icon: health
+
+    - url: https://${{ values.app_name }}.stage.${{ values.base_domain }}/health
+      title: Health Check – Stage
+      icon: health
 
     # ───── Argo CD (READ-ONLY) ─────
     - url: https://argocd.popapps.ai/applications/${{ values.app_name }}-prod

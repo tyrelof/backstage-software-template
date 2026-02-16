@@ -1,0 +1,86 @@
+# ============================================================
+# STAGE ENVIRONMENT VALUES
+#
+# Ownership:
+# - Platform controls platform.*
+# - App teams control config.*
+# ============================================================
+
+# ------------------------------------------------------------
+# Identity
+# ------------------------------------------------------------
+serviceName: ${{ values.app_name }}
+
+# ------------------------------------------------------------
+# Platform context
+# ------------------------------------------------------------
+platform:
+  context:
+    system: ${{ values.system }}
+    env: stage
+
+  secrets:
+    external:
+      refreshInterval: 5m
+      deletionPolicy: Delete
+
+# ------------------------------------------------------------
+# Application configuration (NON-SECRET)
+# ------------------------------------------------------------
+config:
+  APP_NAME: ""
+  APP_ENV: "stage"
+  NODE_ENV: "stage"
+  LOG_LEVEL: "debug"
+
+# ------------------------------------------------------------
+# Runtime
+# ------------------------------------------------------------
+replicaCount: 1
+
+image:
+  repository: ${{ values.image_repository }}
+  tag: ${{ values.image_tag }}
+
+podLabels:
+  platform.io/app: ${{ values.app_name }}
+  platform.io/env: stage
+  platform.io/system: ${{ values.system }}
+
+service:
+  port: 80
+
+ingress:
+  className: nginx
+  annotations:
+    cert-manager.io/cluster-issuer: le-prod
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+  hosts:
+    - host: ${{ values.domain_stage }}
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - secretName: ${{ values.app_name }}-tls-stage
+      hosts:
+        - ${{ values.domain_stage }}
+
+# ------------------------------------------------------------
+# Resources (staging - lower than prod)
+# ------------------------------------------------------------
+resources:
+  limits:
+    cpu: 250m
+    memory: 256Mi
+  requests:
+    cpu: 50m
+    memory: 64Mi
+
+# ------------------------------------------------------------
+# Autoscaling (staging - smaller scale)
+# ------------------------------------------------------------
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 3
+  targetCPUUtilizationPercentage: 70

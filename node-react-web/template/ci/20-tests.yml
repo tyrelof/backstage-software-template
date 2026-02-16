@@ -1,0 +1,11 @@
+test:
+  stage: test
+  tags: ["self-hosted"]
+  image: node:20-bullseye-slim
+  variables:
+    NPM_CONFIG_CACHE: "$CI_PROJECT_DIR/.npm"
+  before_script:
+    - npm ci
+  script:
+    - npm run test --if-present
+  allow_failure: true

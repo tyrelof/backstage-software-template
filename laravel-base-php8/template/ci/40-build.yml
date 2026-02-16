@@ -1,0 +1,60 @@
+# -------------------------
+# BUILD: only when image inputs change
+# -------------------------
+ci_build_image:
+  stage: build
+  tags: ["self-hosted"]
+  image:
+    name: public.ecr.aws/h1y8m9v5/buildkit-awscli
+    entrypoint: [""]
+  needs: ["platform_prereqs", "platform_ssm_placeholders"]
+  rules:
+    - changes:
+        - src/**/*
+        - Dockerfile
+    - when: never
+
+  # OPTIONAL GitLab cache example
+  # cache:
+  #   key:
+  #     files:
+  #       - composer.lock
+  #       - package-lock.json
+  #   paths:
+  #     - node_modules/
+  #     - vendor/
+
+  before_script: |
+    set -euo pipefail
+    : "${AWS_REGION:?AWS_REGION is empty}"
+    : "${AWS_ACCOUNT_ID:?AWS_ACCOUNT_ID is empty}"
+
+    if [ -n "${COMPOSER_AUTH_JSON:-}" ]; then
+      echo "$COMPOSER_AUTH_JSON" | jq -e . >/dev/null
+    fi
+
+    # Write docker auth for ECR into DOCKER_CONFIG/config.json
+    mkdir -p "$DOCKER_CONFIG"
+    PASS="$(aws ecr get-login-password --region "${AWS_REGION}")"
+    AUTH="$(printf 'AWS:%s' "$PASS" | base64 | tr -d '\n')"
+    cat > "$DOCKER_CONFIG/config.json" <<EOF
+    {"auths":{"${ECR_REGISTRY}":{"auth":"${AUTH}"}}}
+    EOF
+
+  script: |
+    set -euo pipefail
+
+    # Rootless BuildKit sometimes cannot mount /proc due to sandbox restrictions.
+    # Disable process sandbox for OCI worker.
+    export BUILDKITD_FLAGS="--oci-worker-no-process-sandbox"
+
+    # Build + push + registry cache
+    buildctl-daemonless.sh build \
+      --frontend dockerfile.v0 \
+      --local context="${CI_PROJECT_DIR}" \
+      --local dockerfile="${CI_PROJECT_DIR}" \
+      --opt build-arg:COMPOSER_AUTH_JSON="${COMPOSER_AUTH_JSON}" \
+      --import-cache "type=registry,ref=${CACHE_REF}" \
+      --export-cache "type=registry,ref=${CACHE_REF},mode=max" \
+      --output "type=image,name=${IMAGE_REPO}:${COMMIT_ID},push=true" \
+      --output "type=image,name=${IMAGE_REPO}:latest,push=true"

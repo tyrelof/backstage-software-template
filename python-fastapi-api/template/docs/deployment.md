@@ -1,343 +1,328 @@
 # Deployment Guide
 
-Step-by-step guide for deploying ${{ values.app_name }} to production using GitOps with ArgoCD.
+## Overview
 
-## Prerequisites
+This application follows the **platform delivery model**:
 
-- GitLab repository configured
-- AWS account with EKS cluster
-- ArgoCD deployed on EKS cluster
-- kubectl configured for EKS cluster
-- Helm 3.x installed (for local testing)
+1. **Develop locally** - Use `make dev` or native Python
+2. **Commit to Git** - Push to `main` branch
+3. **CI builds image** - GitLab CI creates Docker image and pushes to ECR
+4. **ArgoCD deploys** - GitOps automatically deploys to stage or waits for manual approval to prod
+5. **Monitor & rollback** - Watch health checks and metrics
 
-## Deployment Architecture
+**You do not run kubectl apply or helm upgrade manually.**
 
-The deployment uses a **GitOps** workflow:
+---
 
-```
-Git Repository (main branch)
-    ↓
-GitLab CI/CD Pipeline
-    ├─ Build: Docker image → AWS ECR
-    ├─ Stage: ArgoCD updates staging deployment
-    └─ Prod: Manual → ArgoCD updates production deployment
-```
+## 🔄 Deployment Workflow
 
-All deployment state is stored in Git (`charts/values-stage.yaml`, `charts/values-prod.yaml`), enabling:
-- Full audit trail of changes
-- Easy rollback via Git history
-- Consistent deployment process
-- Declarative infrastructure
-
-## Quick Start
-
-### For Developers
-
-1. **Commit code to main**:
-   ```bash
-   git add .
-   git commit -m "feat: add new endpoint"
-   git push origin main
-   ```
-
-2. **Pipeline automatically**:
-   - ✓ Lints and tests code
-   - ✓ Builds Docker image
-   - ✓ Deploys to staging
-   - ✓ Waits for manual approval
-
-3. **Test in staging**:
-   ```bash
-   # Access staging environment
-   curl https://${{ values.app_name }}.stage.${{ values.base_domain }}/health
-   ```
-
-4. **Promote to production** (manual):
-   - Go to GitLab → Pipelines → Find your commit
-   - Click **Play** on `cd_prod_deploy` job
-   - Confirm deployment
-
-### For Operators
-
-#### Set Up New Service
-
-1. **Prepare environment variables** in GitLab CI/CD settings:
-   ```
-   AWS_ACCOUNT_ID: 123456789012
-   AWS_REGION: us-east-2
-   PROJECT_PUSH_TOKEN: glpat-xxxxxxxxxxxxx
-   ARGOCD_USERNAME: admin
-   ARGOCD_PASSWORD: xxxxxxxxxxxxxxxx
-   ```
-
-2. **Deploy service**:
-   - Push code to main → Pipeline runs → Staging deployed automatically
-   - Manual approval → Production deployed
-
-3. **Monitor deployment**:
-   ```bash
-   argocd app get ${{ values.app_name }}-stage
-   argocd app get ${{ values.app_name }}-prod
-   ```
-
-## Detailed Deployment Process
-
-### Stage 1: Lint and Test
-
-```
-Triggered by: Commit to main branch
-Actions:
-  - Lint code (ruff, black, isort)
-  - Run unit tests with coverage
-  - No deployment happens yet
-```
-
-### Stage 2: Build Docker Image
-
-```
-Triggered by: Lint and test pass
-Actions:
-  - Build Docker image
-  - Tag with commit SHA (e.g., abc1234)
-  - Push to AWS ECR
-  - Image: ${{ values.image_repository }}:abc1234
-  - Also tagged as 'latest'
-```
-
-### Stage 3: Deploy to Staging
-
-```
-Triggered by: Build succeeds + code files changed
-Actions:
-  - Update: charts/${{ values.app_name }}/values-stage.yaml
-  - Commit updated values to Git
-  - Create/update ArgoCD app: ${{ values.app_name }}-stage
-  - Sync application (auto-deploy)
-```
-
-**Accessible at**: `https://${{ values.app_name }}.stage.${{ values.base_domain }}`
-
-### Stage 4: Manual Approval → Production
-
-```
-Triggered by: Manual click in GitLab UI
-Actions:
-  - Update: charts/${{ values.app_name }}/values-prod.yaml
-  - SAME image tag as staging
-  - Commit updated values to Git
-  - Create/update ArgoCD app: ${{ values.app_name }}-prod
-  - Sync application (auto-deploy)
-```
-
-**Accessible at**: `https://${{ values.app_name }}.${{ values.base_domain }}`
-
-## Monitoring Deployments
-
-### Real-time Status
+### 1. Local Development
 
 ```bash
-# Check staging deployment
-argocd app get ${{ values.app_name }}-stage --refresh
+# Start development server
+make dev
 
-# Check production deployment
-argocd app get ${{ values.app_name }}-prod --refresh
-
-# Watch sync progress
-argocd app wait ${{ values.app_name }}-prod --timeout 300
+# Make changes
+# Commit and push
+git add .
+git commit -m "Add new feature"
+git push origin main
 ```
 
-### View Logs
+### 2. CI Build (Automatic)
+
+When you push to `main`, the GitLab pipeline:
+
+- ✅ **Lint**: Ruff, Helm lint, YAML validation
+- ✅ **Test**: pytest (if configured)
+- ✅ **Build**: BuildKit multi-stage Docker build
+- ✅ **Push**: Image pushed to ECR with tags: commit SHA, `latest`
+- ✅ **Security**: Trivy vulnerability scan
+- ✅ **Release**: Auto-deploy to stage
+
+### 3. Staging Validation
+
+After build, the pipeline automatically deploys to **stage** namespace `${{ values.app_name }}-stage`:
 
 ```bash
-# Stream logs from staging
-kubectl logs -f -l app=${{ values.app_name }} -n ${{ values.app_name }}-stage
+# Check deployment status
+kubectl -n ${{ values.app_name }}-stage get deployment ${{ values.app_name }}
 
-# Stream logs from production
-kubectl logs -f -l app=${{ values.app_name }} -n ${{ values.app_name }}-prod
+# View logs
+kubectl -n ${{ values.app_name }}-stage logs -f deployment/${{ values.app_name }}
+
+# Test in stage
+curl https://${{ values.app_name }}-stage.example.com/health
 ```
 
-### Health Checks
+### 4. Production Deploy (Manual)
+
+Once validated in stage, **you** trigger production deploy:
+
+- Via GitLab CI: Click **Play** on the "deploy-prod" job
+- Via ArgoCD UI: Sync the production application
+- Via CLI:
 
 ```bash
-# Test staging health endpoints
-curl https://${{ values.app_name }}.stage.${{ values.base_domain }}/health
-curl https://${{ values.app_name }}.stage.${{ values.base_domain }}/api/v1/status
-
-# Test production health endpoints
-curl https://${{ values.app_name }}.${{ values.base_domain }}/health
-curl https://${{ values.app_name }}.${{ values.base_domain }}/api/v1/status
+argocd app sync ${{ values.app_name }}-prod --wait
 ```
 
-## Configuration Differences Between Environments
+### 5. Monitor Production
 
-### Staging (values-stage.yaml)
+After deploy to production namespace `${{ values.app_name }}-prod`:
 
-```yaml
-replicaCount: 1                    # Minimal replicas
-autoscaling:
-  minReplicas: 1
-  maxReplicas: 3                  # Small scaling range
-resources:
-  requests:
-    cpu: 50m                       # Light resources
-    memory: 64Mi
-  limits:
-    cpu: 250m
-    memory: 256Mi
+```bash
+# Check pod status
+kubectl -n ${{ values.app_name }}-prod get pods -l app=${{ values.app_name }}
+
+# Watch logs (real-time)
+kubectl -n ${{ values.app_name }}-prod logs -f deployment/${{ values.app_name }}
+
+# View metrics
+# (via Grafana/Prometheus dashboard)
 ```
 
-### Production (values-prod.yaml)
+---
 
-```yaml
-replicaCount: 2                    # Higher replicas
-autoscaling:
-  minReplicas: 2
-  maxReplicas: 10                 # Larger scaling range
-resources:
-  requests:
-    cpu: 100m                      # More resources
-    memory: 128Mi
-  limits:
-    cpu: 500m
-    memory: 512Mi
+## 📦 Image Tagging & Versioning
+
+Images are pushed to ECR with:
+
+| Tag | Purpose |
+|-----|---------|
+| `latest` | Current main branch build (latest commit)|
+| `{commit-sha}` | Full git commit SHA (e.g., `abc123def456`) |
+| `v1.0.0` | Optional semantic version tag (manual) |
+
+The CI/CD pipeline automatically updates Helm `values-stage.yaml` and `values-prod.yaml` with the commit SHA when building:
+
+```bash
+# values-stage.yaml
+image:
+  repository: 123456789.dkr.ecr.us-east-2.amazonaws.com/my-app
+  tag: "abc123def456"  # CI automatically updates this
 ```
 
-**Code/Image**: Identical in both environments
+---
 
-## Rollback Procedure
+## 🚀 Staging to Production Promotion
 
-### Via ArgoCD
+### Requirements
+
+Before promoting to production:
+
+```bash
+# 1. Verify stage deployment is healthy
+kubectl -n ${{ values.app_name }}-stage get pods
+
+# 2. Check recent logs for errors
+kubectl -n ${{ values.app_name }}-stage logs deployment/${{ values.app_name }} --tail 50
+
+# 3. Verify liveness/readiness probes passing
+kubectl -n ${{ values.app_name }}-stage describe pod <pod-name> | grep -A 5 "Liveness\|Readiness"
+
+# 4. Verify health endpoint
+kubectl -n ${{ values.app_name }}-stage port-forward svc/${{ values.app_name }} 3000:3000 &
+curl http://localhost:3000/health && kill %1
+```
+
+### Production Deploy Steps
+
+```bash
+# 1. Go to GitLab: CI/CD > Pipelines > Your Build
+# 2. Find "deploy-prod" job (manual trigger)
+# 3. Click ▶️ Play button
+# 4. Wait for deployment to complete
+
+# Or via CLI:
+argocd app sync ${{ values.app_name }}-prod --wait
+```
+
+### Post-Deployment Validation
+
+```bash
+# 1. Check pods are running
+kubectl -n ${{ values.app_name }}-prod get pods
+
+# 2. Monitor logs
+kubectl -n ${{ values.app_name }}-prod logs -f deployment/${{ values.app_name }}
+
+# 3. Test health endpoint
+kubectl -n ${{ values.app_name }}-prod port-forward svc/${{ values.app_name }} 3000:3000 &
+curl http://localhost:3000/health && kill %1
+
+# 4. Monitor metrics (use Grafana/Prometheus/CloudWatch)
+# Watch for spike in errors, latency, or resource usage
+```
+
+---
+
+## 🔄 Rollback Procedures
+
+### Quick Rollback (Last Image)
+
+```bash
+# View release history
+helm history ${{ values.app_name }} -n ${{ values.app_name }}-prod
+
+# Rollback to previous release
+helm rollback ${{ values.app_name }} -n ${{ values.app_name }}-prod
+
+# Watch rollback progress
+kubectl -n ${{ values.app_name }}-prod rollout status deployment/${{ values.app_name }}
+```
+
+### Rollback via ArgoCD
 
 ```bash
 # View deployment history
 argocd app history ${{ values.app_name }}-prod
 
-# Rollback to previous sync
-argocd app rollback ${{ values.app_name }}-prod <revision>
+# Rollback to specific revision
+argocd app rollback ${{ values.app_name }}-prod 1
+
+# Monitor sync
+argocd app wait ${{ values.app_name }}-prod
 ```
 
-### Via Git
+### Manual Rollback (Emergency)
 
 ```bash
-# Revert last commit
-git revert HEAD
+# Edit values-prod.yaml to previous image SHA
+nano charts/${{ values.app_name }}/values-prod.yaml
+
+# Update image.tag to known-good commit
+# image:
+#   tag: "previous-good-sha"
+
+# Commit and push
+git add charts/${{ values.app_name }}/values-prod.yaml
+git commit -m "hotfix: rollback prod to previous image"
 git push origin main
-# Pipeline runs → Staging deploys → Manual approval → Production deploys
+
+# ArgoCD auto-syncs
+# Alternatively, force sync immediately:
+argocd app sync ${{ values.app_name }}-prod --force
 ```
 
-### Emergency Rollback
+---
+
+## 🛠️ Helm Update (Config Changes Only)
+
+If you update Helm values without changing code:
 
 ```bash
-# Edit values directly (not recommended, use Git instead)
-kubectl set image deployment/${{ values.app_name }} \
-  ${{ values.app_name }}=${{ values.image_repository }}:previous-tag \
-  -n ${{ values.app_name }}-prod
+# 1. Edit values file
+nano charts/${{ values.app_name }}/values-stage.yaml
+
+# 2. Test locally
+helm template ${{ values.app_name }} ./charts/${{ values.app_name }} \
+  -f values-stage.yaml > /tmp/rendered.yaml
+
+# 3. Commit and push
+git add charts/${{ values.app_name }}/values-stage.yaml
+git commit -m "chore: update staging replicas and resources"
+git push origin main
+
+# 4. ArgoCD detects change and syncs automatically
+# Note: No Docker rebuild needed - reuses existing image
 ```
 
-## Post-Deployment Verification
+---
 
-### 1. Check Pod Status
+## 🔔 Deployment Notifications
+
+Monitor deployment in real-time:
 
 ```bash
-kubectl get pods -n ${{ values.app_name }}-prod
+# Watch pod rollout progress
+kubectl -n ${{ values.app_name }}-stage rollout status deployment/${{ values.app_name }} -w
+
+# Get event stream
+kubectl -n ${{ values.app_name }}-stage get events -w
+
+# Check ArgoCD sync status
+argocd app wait ${{ values.app_name }}-stage --health
 ```
 
-Expected: All pods `Running` and `Ready`
+---
 
-### 2. Check Rollout Status
+## 🚨 Common Issues
+
+### Pods Stuck in ImagePullBackOff
 
 ```bash
-kubectl rollout status deployment/${{ values.app_name }} \
-  -n ${{ values.app_name }}-prod
+# 1. Verify image exists in ECR
+aws ecr describe-images --repository-name ${{ values.app_name }} --region us-east-2
+
+# 2. Check pod events
+kubectl -n ${{ values.app_name }}-stage describe pod <pod-name>
+
+# 3. Verify image.repository in values
+kubectl -n ${{ values.app_name }}-stage get deployment ${{ values.app_name }} -o yaml | grep image:
 ```
 
-Expected: "deployment "${{ values.app_name }}" successfully rolled out"
-
-### 3. Test Application
+### Pods Stuck in CrashLoopBackOff
 
 ```bash
-# GET health endpoint
-curl -v https://${{ values.app_name }}.${{ values.base_domain }}/health
+# 1. Check application error
+kubectl -n ${{ values.app_name }}-stage logs <pod-name> --previous
 
-# GET status endpoint
-curl -v https://${{ values.app_name }}.${{ values.base_domain }}/api/v1/status
+# 2. Verify environment variables loaded
+kubectl -n ${{ values.app_name }}-stage exec <pod-name> -- printenv | grep DB_
 
-# Access interactive docs
-open https://${{ values.app_name }}.${{ values.base_domain }}/docs
+# 3. Check if database/dependencies accessible
+kubectl -n ${{ values.app_name }}-stage exec <pod-name> -- curl http://postgres:5432
 ```
 
-### 4. Monitor Metrics
-
-Check Grafana dashboard: `https://grafana.popapps.ai`
-
-## Troubleshooting
-
-### Deployment Stuck in Pending
+### Deployment Timeout
 
 ```bash
-# Check ArgoCD status
+# 1. Check pod status
+kubectl -n ${{ values.app_name }}-stage get pods -o wide
+
+# 2. View resource constraints
+kubectl describe node | grep -A 5 "Allocated resources"
+
+# 3. Increase resource limits if needed
+helm upgrade ${{ values.app_name }} ./charts/${{ values.app_name }} \
+  -n ${{ values.app_name }}-stage \
+  --set resources.requests.memory=256Mi
+```
+
+---
+
+## 📊 Environment Comparison
+
+| Aspect | Stage | Production |
+|--------|-------|------------|
+| **Replicas** | 1 | 3+ |
+| **Resources** | Small | Large |
+| **Updates** | Any time | Scheduled |
+| **Secrets** | Test data | Real (encrypted) |
+| **Backup** | No | Yes |
+| **Monitoring** | Basic | Comprehensive |
+| **Auto-scale** | No | Yes (if HPA enabled) |
+
+---
+
+## 📚 Reference Commands
+
+```bash
+# Deploy info
+helm list -n ${{ values.app_name }}-stage
+helm status ${{ values.app_name }} -n ${{ values.app_name }}-stage
+helm get values ${{ values.app_name }} -n ${{ values.app_name }}-stage
+
+# Kubernetes info
+kubectl get all -n ${{ values.app_name }}-stage
+kubectl describe deployment ${{ values.app_name }} -n ${{ values.app_name }}-stage
+kubectl get events -n ${{ values.app_name }}-stage --sort-by='.lastTimestamp'
+
+# ArgoCD info
+argocd app get ${{ values.app_name }}-stage
 argocd app get ${{ values.app_name }}-prod
-
-# Check if app is syncing
-argocd app wait ${{ values.app_name }}-prod --timeout 300 || argocd app sync ${{ values.app_name }}-prod --force
 ```
 
-### Pod CrashLoopBackOff
+See [kubernetes.md](kubernetes.md) for more kubectl debugging commands.
 
-```bash
-# Check logs
-kubectl logs <pod-name> -n ${{ values.app_name }}-prod
-
-# Check events
-kubectl describe pod <pod-name> -n ${{ values.app_name }}-prod
-
-# Check resource limits
-kubectl top pod <pod-name> -n ${{ values.app_name }}-prod
-```
-
-### Cannot Connect to Application
-
-```bash
-# Check ingress
-kubectl get ingress -n ${{ values.app_name }}-prod
-
-# Check service
-kubectl get svc -n ${{ values.app_name }}-prod
-
-# Test DNS
-kubectl exec -it <pod-name> -n ${{ values.app_name }}-prod -- \
-  curl http://localhost:${{ values.service_port }}/health
-```
-
-### ArgoCD Application Not Found
-
-```bash
-# List all applications
-argocd app list
-
-# Check if app exists in correct ArgoCD instance
-argocd app get ${{ values.app_name }}-prod --refresh
-```
-
-## CI/CD Variables Reference
-
-Set these in GitLab project → Settings → CI/CD → Variables:
-
-| Variable | Purpose |
-|----------|---------|
-| `AWS_ACCOUNT_ID` | AWS account for ECR |
-| `AWS_REGION` | AWS region for ECR |
-| `CI_REGISTRY_USER` | GitLab registry username |
-| `CI_REGISTRY_PASSWORD` | GitLab registry token |
-| `PROJECT_PUSH_TOKEN` | GitLab token for Git operations |
-| `ARGOCD_USERNAME` | ArgoCD login username |
-| `ARGOCD_PASSWORD` | ArgoCD login password |
-
-## Support
-
-For issues or questions:
-- Check GitLab pipeline logs
-- Check ArgoCD application status
-- Check Kubernetes events: `kubectl describe`
-- View application logs: `kubectl logs`
-- Slack: #deployment-support

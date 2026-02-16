@@ -1,0 +1,6 @@
+apiVersion: v2
+name: ${{ values.app_name }}
+description: React web app for ${{ values.app_name }}
+type: application
+version: 1.0.0
+appVersion: "1.0"

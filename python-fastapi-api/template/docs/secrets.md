@@ -1,225 +1,473 @@
-# Secrets and Configuration Management
-
-This guide explains how secrets and configuration are managed in the FastAPI application.
+# Secrets & Configuration Management
 
 ## Overview
 
-The application uses a three-tier approach to manage configuration and secrets:
+This application uses **two mechanisms** for runtime configuration:
 
-1. **ConfigMap** - Non-secret, application configuration (environment variables)
-2. **External Secrets Operator (ESO)** - Pulls secrets from AWS SSM Parameter Store
-3. **Deployment** - Mounts both ConfigMap and secrets as environment variables
+1. **ConfigMap** - Non-sensitive configuration in Helm `values-*.yaml` under `config:` section
+2. **AWS SSM Parameter Store** - Sensitive secrets managed via External Secrets Operator (platform-level)
 
-## Architecture
+The External Secrets Operator is **configured at the platform level** and automatically syncs secrets from SSM to Kubernetes. Your app team doesn't need to set it up - just add values and the operator handles the rest!
+
+---
+
+## 🔐 Secrets Management Architecture
 
 ```
-AWS SSM Parameter Store
-  ↓
-External Secrets Operator (ESO)
-  ↓
-Kubernetes Secret
-  ↓
-Pod environment variables
+┌─────────────────────────────────────────┐
+│   AWS SSM Parameter Store (encrypted)   │
+│  /${SYSTEM}/${APP_NAME}/stage/app       │
+│  /${SYSTEM}/${APP_NAME}/prod/app        │
+└────────────────┬────────────────────────┘
+                 │
+    (Platform's External Secrets pulls)
+                 │
+                 ▼
+┌─────────────────────────────────────────┐
+│   Kubernetes Secret (in cluster)        │
+│   my-app-external-secrets               │
+└────────────────┬────────────────────────┘
+                 │
+         (Pod mounts as env vars)
+                 │
+                 ▼
+┌─────────────────────────────────────────┐
+│   Running Pod                           │
+│   Accesses: process.env.DB_PASSWORD     │
+└─────────────────────────────────────────┘
 ```
 
-## Creating Secrets
+---
 
-### Step 1: Set up External Secrets Operator
+## 📝 Configuration (Non-Secret via Helm)
 
-External Secrets Operator must be installed in your cluster (usually by platform team):
+Non-sensitive configuration is stored in **Helm `values-*.yaml`** files under `config:`:
 
-```bash
-helm repo add external-secrets https://charts.external-secrets.io
-helm install external-secrets external-secrets/external-secrets \
-  -n external-secrets-system --create-namespace
-```
-
-### Step 2: Create AWS SSM SecretStore
-
-Create a `ClusterSecretStore` (platform setup, usually done once):
-
-```yaml
-apiVersion: external-secrets.io/v1beta1
-kind: ClusterSecretStore
-metadata:
-  name: aws-ssm
-spec:
-  provider:
-    aws:
-      service: ParameterStore
-      region: us-east-2
-      auth:
-        jwt:
-          serviceAccountRef:
-            name: external-secrets-operator
-```
-
-### Step 3: Populate SSM Parameters
-
-The CI/CD pipeline automatically creates placeholder parameters:
-
-- `/${SYSTEM}/${APP_NAME}/stage/app` - Staging secrets
-- `/${SYSTEM}/${APP_NAME}/prod/app` - Production secrets
-
-Populate them via AWS CLI:
-
-```bash
-# Example: Set staging secrets
-aws ssm put-parameter \
-  --name "/popapps/myapp/stage/app" \
-  --type "SecureString" \
-  --value '{
-    "DATABASE_URL": "postgresql://user:pass@db:5432/myapp_stage",
-    "API_KEY": "sk-test-12345",
-    "DEBUG": "false"
-  }' \
-  --overwrite
-
-# Example: Set production secrets
-aws ssm put-parameter \
-  --name "/popapps/myapp/prod/app" \
-  --type "SecureString" \
-  --value '{
-    "DATABASE_URL": "postgresql://user:pass@db-prod:5432/myapp",
-    "API_KEY": "sk-prod-98765",
-    "DEBUG": "false"
-  }' \
-  --overwrite
-```
-
-## Using Configuration
-
-### ConfigMap (Non-Secret Configuration)
-
-Define non-secret configuration in `values-*.yaml`:
+### values-stage.yaml
 
 ```yaml
 config:
-  LOG_LEVEL: "info"
-  MAX_WORKERS: "4"
-  CACHE_TTL: "3600"
+  APP_ENV: "stage"
+  LOG_LEVEL: "debug"
+  # Add your own config:
+  MY_API_URL: "https://api-staging.example.com"
 ```
 
-This creates a ConfigMap that's mounted as environment variables.
+### values-prod.yaml
 
-### Secrets from SSM
+```yaml
+config:
+  APP_ENV: "production"
+  LOG_LEVEL: "info"
+  # Add your own config:
+  MY_API_URL: "https://api.example.com"
+```
 
-Secrets defined in SSM parameters are automatically:
+### How It Works
 
-1. Pulled by External Secrets Operator
-2. Stored in Kubernetes Secret: `${APP_NAME}-secrets`
-3. Injected as environment variables
+The Helm chart creates a **ConfigMap** from the `config:` section:
 
-The ESO `ExternalSecret` watches the SSM parameter and automatically:
-- Refreshes every 5 minutes (configurable)
-- Updates the Kubernetes secret when SSM changes
-- Triggers pod restarts via Stakater Reloader
+```yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: my-app-external-config
+data:
+  APP_ENV: "production"
+  LOG_LEVEL: "info"
+  MY_API_URL: "https://api.example.com"
+```
 
-## Environment Variables
+Pod mounts both ConfigMap and Secrets:
 
-All configuration becomes environment variables in the pod:
+```yaml
+envFrom:
+  - configMapRef:
+      name: my-app-external-config  # Non-secret config
+  - secretRef:
+      name: my-app-external-secrets  # Secrets from SSM
+```
+
+---
+
+## 🔑 Secrets (AWS SSM Parameter Store)
+
+Sensitive data is stored in **AWS SSM Parameter Store**:
+
+### SSM Parameter Paths
+
+The CI/CD pipeline **automatically creates** these paths when you deploy:
+
+```
+/${{ values.system }}/${{ values.app_name }}/stage/app
+/${{ values.system }}/${{ values.app_name }}/prod/app
+```
+
+**Example paths**:
+
+```
+/platform/my-app/stage/app
+/platform/my-app/prod/app
+```
+
+### SSM Secret Format
+
+Secrets are stored as **JSON objects** in SSM:
+
+```json
+{
+  "DB_HOST": "postgres-stage.rds.amazonaws.com",
+  "DB_USER": "app_user_stage",
+  "DB_PASSWORD": "secret-password-123",
+  "DB_NAME": "my_app_db",
+  "REDIS_URL": "redis://redis-stage:6379",
+  "JWT_SECRET": "super-secret-key-stage"
+}
+```
+
+### Adding/Updating Secrets
+
+Use **AWS CLI** to add or update SSM parameters:
+
+```bash
+# Add staging secrets
+aws ssm put-parameter \
+  --name "/platform/my-app/stage/app" \
+  --type "SecureString" \
+  --value '{
+    "DB_HOST": "postgres-stage.rds.amazonaws.com",
+    "DB_USER": "app_user",
+    "DB_PASSWORD": "staging-password",
+    "DB_NAME": "my_app_db"
+  }' \
+  --overwrite \
+  --region us-east-2
+
+# Add production secrets
+aws ssm put-parameter \
+  --name "/platform/my-app/prod/app" \
+  --type "SecureString" \
+  --value '{
+    "DB_HOST": "postgres-prod.rds.amazonaws.com",
+    "DB_USER": "app_user",
+    "DB_PASSWORD": "production-password",
+    "DB_NAME": "my_app_db_prod"
+  }' \
+  --overwrite \
+  --region us-east-2
+```
+
+### Retrieving Secrets
+
+```bash
+# Get staging secrets
+aws ssm get-parameter \
+  --name "/platform/my-app/stage/app" \
+  --with-decryption \
+  --query 'Parameter.Value' \
+  --region us-east-2 | jq .
+
+# Output:
+# {
+#   "DB_HOST": "postgres-stage.rds.amazonaws.com",
+#   "DB_PASSWORD": "***",
+#   ...
+# }
+```
+
+---
+
+## 🔄 How External Secrets Works
+
+The **platform-level External Secrets Operator** automatically:
+
+1. Reads SSM parameters: `/${{ values.system }}/${{ values.app_name }}/{stage|prod}/app`
+2. Converts JSON to individual key-value pairs
+3. Creates Kubernetes Secret: `my-app-external-secrets`
+4. Injects as environment variables into pods
+
+**Your Helm chart** references the Secret (already done in the template):
+
+```yaml
+# In templates/deployment.yaml
+envFrom:
+  - configMapRef:
+      name: {{ include "app.fullname" . }}-config
+  - secretRef:
+      name: {{ include "app.fullname" . }}-external  # Synced from SSM
+```
+
+---
+
+## 🐳 Using Secrets in Application
+
+### Database Connection Example (SQLAlchemy)
 
 ```python
-# FastAPI app can read them directly
+# app/database.py
+from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 import os
 
-db_url = os.getenv("DATABASE_URL")
-api_key = os.getenv("API_KEY")
-log_level = os.getenv("LOG_LEVEL", "info")  # With default
+DATABASE_URL = f"postgresql+asyncpg://{os.getenv('DB_USER')}:{os.getenv('DB_PASSWORD')}@{os.getenv('DB_HOST')}/{os.getenv('DB_NAME')}"
+
+engine = create_async_engine(DATABASE_URL, echo=False, pool_pre_ping=True)
+
+async def get_db() -> AsyncSession:
+    async with SessionLocal() as session:
+        yield session
 ```
 
-### Priority Order
+### Secrets with Pydantic Settings
 
-1. SSM secrets (highest priority - overwrites ConfigMap)
-2. ConfigMap values
-3. Pod default values
+```python
+# app/config.py
+from pydantic_settings import BaseSettings
+import os
 
-## Secrets Rotation
+class Settings(BaseSettings):
+    # Database
+    db_host: str = os.getenv("DB_HOST", "localhost")
+    db_user: str = os.getenv("DB_USER", "")
+    db_password: str = os.getenv("DB_PASSWORD", "")
+    db_name: str = os.getenv("DB_NAME", "my_app")
+    
+    # Cache
+    redis_url: str = os.getenv("REDIS_URL", "redis://localhost:6379")
+    
+    # Authentication
+    jwt_secret: str = os.getenv("JWT_SECRET", "secret-key")
+    
+    # API Configuration (non-secret)
+    api_url: str = os.getenv("MY_API_URL", "https://api.example.com")
+    app_env: str = os.getenv("APP_ENV", "development")
+    
+    class Config:
+        case_sensitive = False
 
-To rotate secrets:
+settings = Settings()
+```
 
-1. Update SSM parameter:
+### API Authentication Example
+
+```python
+# app/middleware/auth.py
+from fastapi import Depends, HTTPException
+from fastapi.security import HTTPBearer, HTTPAuthCredentials
+import jwt
+from app.config import settings
+
+security = HTTPBearer()
+
+async def verify_token(credentials: HTTPAuthCredentials = Depends(security)):
+    token = credentials.credentials
+    try:
+        payload = jwt.decode(
+            token,
+            settings.jwt_secret,
+            algorithms=["HS256"]
+        )
+        return payload
+    except jwt.InvalidTokenError:
+        raise HTTPException(status_code=401, detail="Invalid token")
+```
+
+### Redis Cache Example
+
+```python
+# app/cache.py
+import redis.asyncio as redis
+import json
+from app.config import settings
+
+redis_client = redis.from_url(settings.redis_url)
+
+async def get_cache(key: str):
+    value = await redis_client.get(key)
+    return json.loads(value) if value else None
+
+async def set_cache(key: str, value: dict, ttl: int = 3600):
+    await redis_client.setex(key, ttl, json.dumps(value))
+```
+
+---
+
+## 🔌 Environment Variables in FastAPI
+
+All environment variables are **server-side only** in Python. There are no public/private distinctions like in Next.js.
+
+```python
+# ✅ All of these are server-side only (never exposed to client)
+DB_HOST = "postgres.rds.amazonaws.com"
+DB_PASSWORD = "secret-password"
+JWT_SECRET = "secret-key"
+REDIS_URL = "redis://redis:6379"
+MY_API_URL = "https://api.example.com"
+```
+
+### Accessing in API Routes
+
+```python
+# app/routers/config.py
+from fastapi import APIRouter
+from app.config import settings
+
+router = APIRouter()
+
+@router.get("/api/config")
+async def get_config():
+    """Return non-sensitive config only"""
+    return {
+        # ✅ Can return non-secret settings
+        "environment": settings.app_env,
+        "api_url": settings.api_url,
+        # ❌ NEVER return secrets
+        # "jwt_secret": settings.jwt_secret,  # NEVER!
+    }
+```
+
+---
+
+## 🔄 Secret Rotation
+
+The External Secrets Operator automatically syncs AWS SSM changes to Kubernetes Secrets:
+
 ```bash
+# 1. Update secret in AWS SSM
 aws ssm put-parameter \
-  --name "/popapps/myapp/prod/app" \
+  --name "/platform/my-app/stage/app" \
   --type "SecureString" \
-  --value '{"NEW_SECRET":"new_value"}' \
+  --value '{
+    "DB_PASSWORD": "new-password-xyz"
+  }' \
+  --overwrite \
+  --region us-east-2
+
+# 2. External Secrets updates the Kubernetes Secret (automatically)
+# Typically within 1-5 minutes depending on RefreshInterval in values
+
+# 3. Pods with replicaCount > 1 can be rolled gradually:
+kubectl -n ${{ values.app_name }}-stage rollout restart deployment/${{ values.app_name }}
+
+# 4. Verify new secrets are in use
+kubectl -n ${{ values.app_name }}-stage logs -f deployment/${{ values.app_name }}
+```
+
+### Refresh Interval (Helm Values)
+
+```yaml
+# values-stage.yaml
+# How often External Secrets checks for updates
+refreshInterval: 5m    # Check every 5 minutes
+
+# values-prod.yaml
+refreshInterval: 1h    # Check every hour (less frequent)
+```
+
+---
+
+## 🚨 Troubleshooting
+
+### Secret Not Available in Pod
+
+```bash
+# 1. Check if SSM parameter exists
+aws ssm get-parameter \
+  --name "/platform/my-app/stage/app" \
+  --region us-east-2 \
+  --with-decryption
+
+# 2. Check if Kubernetes Secret was created
+kubectl -n ${{ values.app_name }}-stage get secrets
+# Expected output includes: my-app-external-secrets
+
+# 3. Verify Secret contents
+kubectl -n ${{ values.app_name }}-stage get secret my-app-external-secrets -o yaml
+
+# 4. Check External Secrets Controller logs
+kubectl -n external-secrets logs -f deployment/external-secrets
+```
+
+### Pod Not Reading Secrets
+
+```bash
+# 1. Check pod environment variables
+kubectl -n ${{ values.app_name }}-stage exec -it <pod-name> -- env | grep DB_
+
+# 2. Check if secretRef is in deployment
+kubectl -n ${{ values.app_name }}-stage get deployment my-app -o yaml | grep -A 10 secretRef
+
+# 3. Restart pod to pick up new secrets
+kubectl -n ${{ values.app_name }}-stage rollout restart deployment/my-app
+```
+
+### SSM Parameter Malformed
+
+```bash
+# Secrets must be valid JSON
+aws ssm put-parameter \
+  --name "/platform/my-app/stage/app" \
+  --type "SecureString" \
+  --value '{"DB_HOST":"postgres","DB_PASSWORD":"secret"}' \
+  --overwrite
+
+# ✅ Valid JSON with escaped quotes
+aws ssm put-parameter \
+  --name "/platform/my-app/stage/app" \
+  --type "SecureString" \
+  --value '{"user": "app", "pass": "123"}' \
+  --overwrite
+
+# ❌ Invalid - unescaped quotes will fail
+aws ssm put-parameter \
+  --name "/platform/my-app/stage/app" \
+  --type "SecureString" \
+  --value '{user: app, pass: 123}' \
   --overwrite
 ```
 
-2. ESO automatically updates Kubernetes secret (within 5 minutes)
-3. Reloader automatically restarts pods with new secrets
+---
 
-## Troubleshooting
+## 📋 Security Best Practices
 
-### Secrets not appearing
+### Do
 
-```bash
-# Check if ESO is running
-kubectl get pods -n external-secrets-system
+✅ **Rotate secrets regularly** - Update AWS SSM parameters monthly  
+✅ **Use strong passwords** - At least 16 characters with mixed case/numbers/symbols  
+✅ **Limit IAM access** - Only give teams SSM access they need  
+✅ **Audit secret access** - Enable CloudTrail for SSM parameter access  
+✅ **Use SecureString type** - Always use encrypted parameters in SSM  
 
-# Check ExternalSecret status
-kubectl describe externalsecret ${APP_NAME}-external
+### Don't
 
-# Check if secret is created
-kubectl get secret ${APP_NAME}-secrets -o yaml
-```
+❌ **Commit secrets** - Never add DB_PASSWORD to git or docker images  
+❌ **Log secrets** - Filter sensitive vars from application logs  
+❌ **Share secrets via email** - Use AWS Secrets Manager + IAM instead  
+❌ **Use simple passwords** - Avoid "password123" or dictionary words  
+❌ **Reuse secrets across environments** - Different secrets for stage/prod  
 
-### Pod not restarting after secret update
+---
 
-```bash
-# Check Reloader annotations
-kubectl describe pod ${POD_NAME} | grep "reloader.stakater.com"
+## 📚 Reference
 
-# Manual pod restart
-kubectl rollout restart deployment/${APP_NAME}
-```
+| Method | Use Case | Managed By |
+|--------|----------|-----------|
+| ConfigMap (`config:` in Helm) | Non-sensitive config | Your Helm values |
+| AWS SSM Parameter Store | Sensitive secrets | Platform team (External Secrets syncs) |
+| Kubernetes Secret | Synced from SSM | External Secrets Operator |
+| Environment Variables | App access | Pod spec `envFrom` |
 
-### SSM parameter not found
+---
 
-```bash
-# List all SSM parameters
-aws ssm describe-parameters --filters "Key=Name,Values=/popapps" --region us-east-2
+## 🎯 Quick Checklist
 
-# Check specific parameter
-aws ssm get-parameter --name "/popapps/myapp/stage/app" --region us-east-2
-```
+- [ ] Database credentials are unique per environment (stage ≠ prod)
+- [ ] Secrets are JSON formatted in AWS SSM
+- [ ] External Secrets Operator is running on the platform
+- [ ] Pod has `envFrom.secretRef` for secrets and `envFrom.configMapRef` for config
+- [ ] Team has IAM access to SSM parameters they need
+- [ ] CloudTrail is logging SSM parameter access
+- [ ] Python environment uses asynchronous database drivers where applicable
+- [ ] Pydantic Settings is used for centralized configuration management
+- [ ] No secrets are logged or printed in application code
+- [ ] All secrets use strong passwords (16+ characters, mixed case/numbers/symbols)
 
-## Security Best Practices
-
-1. **Use SecureString** - SSM parameters created as SecureString (encrypted at rest)
-2. **IAM Policy** - Limit ESO ServiceAccount to only read SSM parameters (not write/delete)
-3. **RBAC** - Limit Kubernetes RBAC for secrets access
-4. **Audit Logging** - Enable CloudTrail for SSM changes
-5. **Secrets Rotation** - Regularly rotate API keys and passwords
-6. **No Secrets in Git** - Never commit secrets to Git; use SSM only
-
-## For Operators
-
-### Enable/Disable External Secrets
-
-In `values-*.yaml`:
-
-```yaml
-platform:
-  secrets:
-    external:
-      enabled: true  # Set to false to disable ESO
-      refreshInterval: 5m  # How often to sync from SSM
-      deletionPolicy: Delete  # or Retain in production
-```
-
-### Custom Refresh Interval
-
-```yaml
-platform:
-  secrets:
-    external:
-      refreshInterval: 30m  # Sync every 30 minutes (default 5m)
-```
-
-## Related Documentation
-
-- [External Secrets Operator Docs](https://external-secrets.io/)
-- [AWS Systems Manager Parameter Store](https://docs.aws.amazon.com/systems-manager/latest/userguide/systems-manager-parameter-store.html)
-- [Kubernetes Secrets](https://kubernetes.io/docs/concepts/configuration/secret/)

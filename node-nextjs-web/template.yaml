@@ -2,8 +2,9 @@ apiVersion: scaffolder.backstage.io/v1beta3
 kind: Template
 metadata:
   name: nextjs-service
-  title: Next.js Service (GitLab + EKS)
-  description: Scaffolds a Next.js app with Dockerfile for EKS
+  title: Next.js Template
+  description: |
+    Modern Next.js 16+ web application template with App Router, SSR/SSG support, and API routes (Node.js 20). Multi-stage Docker build, Trivy scanning, and complete Kubernetes/Helm integration.
 spec:
   owner: platform
   type: service
@@ -16,13 +17,17 @@ spec:
           title: Service name
           type: string
           description: |
-            Canonical service identifier
+            Canonical service identifier (lowercase, DNS-friendly)
             
             Used to name:
             - GitLab repository
             - ECR repository
             - Kubernetes namespace
-          pattern: '^([a-zA-Z][a-zA-Z0-9]*)(-[a-zA-Z0-9]+)*$'
+            - Docker image
+            
+            Must start with lowercase letter, contain only lowercase letters,
+            numbers, and hyphens. Examples: my-nextjs, checkout-app, admin-panel
+          pattern: '^[a-z][a-z0-9-]{2,62}$'
 
         ownerPath:
           title: GitLab namespace (repo location)
