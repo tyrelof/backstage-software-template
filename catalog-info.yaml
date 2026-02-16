@@ -5,5 +5,12 @@ metadata:
   description: All my Backstage software templates
 spec:
   targets:
+    - ./go-base-service/template.yaml
+    - ./python-django-base/template.yaml
+    - ./python-fastapi-api/template.yaml
+    - ./node-nodejs-api/template.yaml
+    - ./node-nextjs-web/template.yaml
+    - ./node-react-web/template.yaml
     - ./laravel-filament-php8/template.yaml
     - ./laravel-base-php7/template.yaml
+    - ./laravel-base-php8/template.yaml
