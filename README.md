@@ -1,15 +1,34 @@
 # Backstage Software Templates
 
-This repository contains a collection of reusable [Backstage Scaffolder](https://backstage.io/docs/features/software-templates/) templates for creating production-ready services and web applications.
+Opinionated, production-aligned Backstage Scaffolder templates for bootstrapping services on GitLab + Kubernetes (EKS).
 
-Each template includes project scaffolding plus common operational assets (containerization, CI/CD, Kubernetes/Helm, and docs) so teams can bootstrap new services with a consistent baseline.
+This repository provides multi-language service templates with built-in CI/CD, containerization, Helm charts, and catalog registration to ensure a consistent production baseline across teams.
 
-## What this repo includes
+Each template includes project scaffolding plus common operational assets so new services can be created with standardized structure, delivery workflows, and deployment conventions.
 
-- Multi-language templates for backend APIs and web apps
+---
+
+## What this repository includes
+
+- Multi-language templates for backend APIs and web applications
 - Standardized template inputs for service identity, ownership, DNS, and AWS settings
-- Backstage catalog registration flow via `publish:gitlab` + `catalog:register`
-- Minimal repository-level notes under `docs/`
+- GitLab-first publishing workflow via `publish:gitlab`
+- Automatic Backstage catalog registration via `catalog:register`
+- Consistent repository structure across all stacks
+- Minimal repository-level documentation under `docs/` (template maintenance only)
+
+---
+
+## Design principles
+
+- Production-aligned defaults (CI pipelines, container best practices, security scanning)
+- Explicit scaffolding over excessive abstraction
+- Consistent repository layout across languages
+- GitLab-based delivery workflows with EKS deployment targets
+- Clear separation of platform responsibilities and application logic
+- Templates reflect real-world operational patterns, not demo examples
+
+---
 
 ## Available templates
 
@@ -25,7 +44,7 @@ Each template includes project scaffolding plus common operational assets (conta
 ### Node.js / JavaScript
 
 - `node-nodejs-api` — **Node.js REST API Service**
-- `node-nextjs-web` — **Next.js Template**
+- `node-nextjs-web` — **Next.js Web Application**
 - `node-react-web` — **React + Vite Web Application**
 
 ### PHP / Laravel
@@ -34,60 +53,16 @@ Each template includes project scaffolding plus common operational assets (conta
 - `laravel-base-php8` — **Laravel Base Application (PHP 8.2)**
 - `laravel-filament-php8` — **Laravel + Filament Admin Panel (PHP 8)**
 
+---
+
 ## Repository structure
 
 ```text
 .
 ├── catalog-info.yaml                  # Backstage Location for template targets
-├── docs/                              # Repository-level documentation only
+├── docs/                              # Repository-level documentation (template maintenance only)
 ├── entities/systems/                  # Backstage system entities
 ├── <template-name>/
 │   ├── template.yaml                  # Scaffolder template definition
 │   └── template/                      # Files copied into generated project
 └── mkdocs_template.yaml               # Shared MkDocs scaffold fragment
-```
-
-## Typical template flow
-
-Most templates in this repo follow the same 3-step scaffolder flow:
-
-1. `fetch:template` — render files from `template/` using user parameters
-2. `publish:gitlab` — create repository and push generated code
-3. `catalog:register` — register `catalog-info.yaml` in Backstage catalog
-
-## Register templates in Backstage
-
-1. Add template paths to `catalog-info.yaml` under `spec.targets`
-2. In Backstage, register this repo/location (or refresh if already registered)
-3. Open **Create** in Backstage and choose the desired template
-
-Example target entry:
-
-```yaml
-spec:
-  targets:
-    - ./python-fastapi-api/template.yaml
-    - ./node-nextjs-web/template.yaml
-```
-
-## Common required inputs
-
-Most templates ask for a common set of parameters:
-
-- `component_id` — canonical service name
-- `ownerPath` — GitLab namespace/group
-- `gitlabHost` — GitLab hostname
-- `owner` / `system` — Backstage ownership and domain grouping
-- `baseDomain` — primary DNS zone
-- `servicePort` — container service port
-- `awsAccountId` / `awsRegion` — ECR and deployment region settings
-
-## Documentation
-
-Top-level `docs/` is intentionally minimal and focused on template-repository maintenance.
-Operational runbooks should live in platform repositories or in generated service repositories.
-
-## Notes
-
-- `catalog-info.yaml` currently controls which templates are discoverable in Backstage.
-- You can keep inactive templates in this repo without exposing them by omitting them from `spec.targets`.
